@@ -1,5 +1,7 @@
 import { redirect } from 'next/navigation';
 
+import { EmptyState } from '@/components/EmptyState';
+import { LoadingState } from '@/components/LoadingState';
 import { getCurrentUser } from '@/lib/auth/getCurrentUser';
 
 export default async function AdminPage() {
@@ -10,11 +12,13 @@ export default async function AdminPage() {
   }
 
   return (
-    <section className="space-y-4">
-      <h1 className="section-title">Admin</h1>
-      <div className="card">
-        <p className="text-slate-700">Esta é a visão inicial de admin do SafeOps Manager.</p>
-      </div>
+    <section className="space-y-6">
+      <h2 className="section-title">Admin</h2>
+      <LoadingState label="Sincronizando permissões de acesso..." />
+      <EmptyState
+        title="Nenhuma ação pendente"
+        description="Os fluxos administrativos estão estáveis. Novas solicitações aparecerão aqui."
+      />
     </section>
   );
 }
