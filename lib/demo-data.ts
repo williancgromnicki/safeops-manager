@@ -15,9 +15,11 @@ export type DemoAlert = {
   id: string;
   customerId: string;
   source: string;
-  severity: 'INFO' | 'WARN' | 'CRIT';
+  severity: Severity;
   title: string;
 };
+
+export type Severity = 'INFO' | 'WARN' | 'CRIT';
 
 export type DashboardMetrics = {
   monitoredSites: number;
