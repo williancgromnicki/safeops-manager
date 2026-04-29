@@ -1,54 +1,73 @@
-import { redirect } from 'next/navigation';
+import { DataTable } from '@/components/data-table';
+import { StatusBadge } from '@/components/status-badge';
+import { DEMO_DEVICES, type DemoDevice } from '@/lib/demo-data';
 
-import { DataTable } from '@/components/DataTable';
-import { EmptyState } from '@/components/EmptyState';
-import { StatusBadge } from '@/components/StatusBadge';
-import { getCurrentUser } from '@/lib/auth/getCurrentUser';
-import { DEMO_DEVICES } from '@/lib/demo-data';
-import { createClient } from '@/lib/supabase/server';
+const devices: DemoDevice[] = DEMO_DEVICES;
 
-export default async function DevicesPage() {
-  const user = await getCurrentUser();
-
-  if (!user) {
-    redirect('/login');
-  }
-
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from('devices')
-    .select('id, name, status, metadata')
-    .order('created_at', { ascending: false });
-
-  const devices = data && data.length > 0
-    ? data.map((device) => ({
-        id: device.id,
-        name: device.name,
-        site: typeof device.metadata?.site === 'string' ? device.metadata.site : 'Sem localização',
-        status:
-          device.status === 'critical' ? 'Crítico' : device.status === 'warning' ? 'Atenção' : 'Saudável',
-      }))
-    : DEMO_DEVICES;
-
+export default function DevicesPage() {
   return (
-    <section className="space-y-6">
-      <h2 className="section-title">Devices</h2>
-      {devices.length === 0 ? (
-        <EmptyState
-          title="Nenhum dispositivo encontrado"
-          description="Cadastre dispositivos para começar o monitoramento operacional."
-        />
-      ) : (
-        <DataTable columns={['Dispositivo', 'Local', 'Status operacional']}>
-          {devices.map((device) => (
-            <tr key={device.id} className="text-slate-700">
-              <td className="px-4 py-3 font-medium">{device.name}</td>
-              <td className="px-4 py-3">{device.site}</td>
-              <td className="px-4 py-3"><StatusBadge status={device.status} /></td>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight text-slate-900">
+          Dispositivos
+        </h1>
+        <p className="mt-2 text-sm text-slate-600">
+          Acompanhe os dispositivos monitorados pelo SafeOps Manager.
+        </p>
+      </div>
+
+      <DataTable
+        title="Dispositivos monitorados"
+        description="Visão geral dos equipamentos vinculados ao ambiente do cliente."
+      >
+        <thead className="bg-slate-50">
+          <tr>
+            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Nome
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Local
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Status
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Sistema operacional
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Último check-in
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Alertas ativos
+            </th>
+          </tr>
+        </thead>
+
+        <tbody className="divide-y divide-slate-100 bg-white">
+          {devices.map((device: DemoDevice) => (
+            <tr key={device.id} className="hover:bg-slate-50">
+              <td className="px-4 py-3 font-medium text-slate-900">
+                {device.name}
+              </td>
+              <td className="px-4 py-3 text-slate-600">
+                {device.site}
+              </td>
+              <td className="px-4 py-3">
+                <StatusBadge status={device.status} />
+              </td>
+              <td className="px-4 py-3 text-slate-600">
+                {device.operatingSystem}
+              </td>
+              <td className="px-4 py-3 text-slate-600">
+                {device.lastSeen}
+              </td>
+              <td className="px-4 py-3 text-slate-600">
+                {device.activeAlerts}
+              </td>
             </tr>
           ))}
-        </DataTable>
-      )}
-    </section>
+        </tbody>
+      </DataTable>
+    </div>
   );
 }
