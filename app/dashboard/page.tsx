@@ -1,5 +1,7 @@
 import { redirect } from 'next/navigation';
 
+import { StatCard } from '@/components/StatCard';
+import { StatusBadge } from '@/components/StatusBadge';
 import { getCurrentUser } from '@/lib/auth/getCurrentUser';
 
 export default async function DashboardPage() {
@@ -10,10 +12,13 @@ export default async function DashboardPage() {
   }
 
   return (
-    <section className="space-y-4">
-      <h1 className="section-title">Dashboard</h1>
-      <div className="card">
-        <p className="text-slate-700">Esta é a visão inicial de dashboard do SafeOps Manager.</p>
+    <section className="space-y-6">
+      <h2 className="section-title">Dashboard</h2>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Sites monitorados" value="12" helper={<StatusBadge status="Saudável" />} />
+        <StatCard label="Dispositivos ativos" value="148" helper={<StatusBadge status="Saudável" />} />
+        <StatCard label="Riscos em atenção" value="9" helper={<StatusBadge status="Atenção" />} />
+        <StatCard label="Eventos críticos" value="2" helper={<StatusBadge status="Crítico" />} />
       </div>
     </section>
   );
