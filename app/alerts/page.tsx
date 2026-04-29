@@ -4,7 +4,7 @@ import { DataTable } from '@/components/DataTable';
 import { EmptyState } from '@/components/EmptyState';
 import { SeverityBadge } from '@/components/SeverityBadge';
 import { getCurrentUser } from '@/lib/auth/getCurrentUser';
-import { DEMO_ALERTS } from '@/lib/demo-data';
+import { DEMO_ALERTS, type DemoAlert } from '@/lib/demo-data';
 import { createClient } from '@/lib/supabase/server';
 
 export default async function AlertsPage() {
@@ -20,11 +20,18 @@ export default async function AlertsPage() {
     .select('id, title, severity')
     .order('occurred_at', { ascending: false });
 
-  const alerts = data && data.length > 0
-    ? data.map((alert) => ({
+  const alerts: DemoAlert[] = data && data.length > 0
+    ? data.map((alert): DemoAlert => ({
         id: alert.id,
+        customerId: user.id,
         source: alert.title,
-        severity: alert.severity === 'high' ? 'CRIT' : alert.severity === 'medium' ? 'WARN' : 'INFO',
+        severity:
+          alert.severity === 'high'
+            ? 'CRIT'
+            : alert.severity === 'medium'
+              ? 'WARN'
+              : 'INFO',
+        title: alert.title,
       }))
     : DEMO_ALERTS;
 

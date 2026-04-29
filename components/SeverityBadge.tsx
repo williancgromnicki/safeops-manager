@@ -1,4 +1,4 @@
-type Severity = 'INFO' | 'WARN' | 'CRIT';
+import type { Severity } from '@/lib/demo-data';
 
 const SEVERITY_STYLES: Record<Severity, string> = {
   INFO: 'bg-sky-100 text-sky-700',
