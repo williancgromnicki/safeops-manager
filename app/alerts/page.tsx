@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { DataTable } from '@/components/DataTable';
 import { EmptyState } from '@/components/EmptyState';
 import { SeverityBadge } from '@/components/SeverityBadge';
-import { getAlerts } from '@/lib/data/get-alerts';
+import { getAlerts, type AlertItem } from '@/lib/data/get-alerts';
 import { getCurrentCustomer } from '@/lib/data/get-current-customer';
 import { DEMO_ALERTS } from '@/lib/demo-data';
 
@@ -19,7 +19,9 @@ export default async function AlertsPage() {
   }
 
   const alerts = customer ? await getAlerts(customer.customerId) : [];
-  const list = alerts.length > 0 ? alerts : DEMO_ALERTS;
+  const list: AlertItem[] = alerts.length > 0
+    ? alerts
+    : DEMO_ALERTS.map((alert) => ({ ...alert, status: 'open', occurrenceCount: 1, lastSeenAt: null }));
 
   return (
     <section className="space-y-6">
