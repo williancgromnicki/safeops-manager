@@ -2,13 +2,9 @@ import { redirect } from 'next/navigation';
 
 import { DataTable } from '@/components/DataTable';
 import { EmptyState } from '@/components/EmptyState';
-import { getCurrentUser } from '@/lib/auth/getCurrentUser';
-import {
-  DEMO_DEVICES,
-  type DemoDevice,
-  type OperationalStatus,
-} from '@/lib/demo-data';
-import { createClient } from '@/lib/supabase/server';
+import { getCurrentCustomer } from '@/lib/data/get-current-customer';
+import { getDevices } from '@/lib/data/get-devices';
+import { DEMO_DEVICES, type DemoDevice, type OperationalStatus } from '@/lib/demo-data';
 
 const statusLabel: Record<OperationalStatus, string> = {
   online: 'Online',
@@ -37,50 +33,24 @@ function StatusBadge({ status }: { status: OperationalStatus }) {
   );
 }
 
-function normalizeStatus(status: string | null): OperationalStatus {
-  if (status === 'online') return 'online';
-  if (status === 'offline') return 'offline';
-  if (status === 'attention') return 'attention';
-  return 'unknown';
-}
-
 export default async function DevicesPage() {
-  const user = await getCurrentUser();
+  const customer = await getCurrentCustomer();
 
-  if (!user) {
+  if (!customer) {
     redirect('/login');
   }
 
-  const supabase = await createClient();
+  const devices: DemoDevice[] = customer
+    ? (await getDevices(customer.customerId))
+    : [];
 
-  const { data } = await supabase
-    .from('devices')
-    .select(
-      'id, hostname, site, status, operating_system, last_seen_at, active_alerts',
-    )
-    .order('hostname', { ascending: true });
-
-  const devices: DemoDevice[] =
-    data && data.length > 0
-      ? data.map((device): DemoDevice => ({
-          id: device.id,
-          customerId: user.id,
-          name: device.hostname,
-          site: device.site ?? 'Não informado',
-          status: normalizeStatus(device.status),
-          operatingSystem: device.operating_system ?? 'Não informado',
-          lastSeen: device.last_seen_at
-            ? new Date(device.last_seen_at).toLocaleString('pt-BR')
-            : 'Sem informação recente',
-          activeAlerts: device.active_alerts ?? 0,
-        }))
-      : DEMO_DEVICES;
+  const list = devices.length > 0 ? devices : DEMO_DEVICES;
 
   return (
     <section className="space-y-6">
       <h2 className="section-title">Dispositivos</h2>
 
-      {devices.length === 0 ? (
+      {list.length === 0 ? (
         <EmptyState
           title="Nenhum dispositivo registrado"
           description="Quando dispositivos forem cadastrados ou sincronizados, eles aparecerão nesta listagem."
@@ -96,7 +66,7 @@ export default async function DevicesPage() {
             'Alertas ativos',
           ]}
         >
-          {devices.map((device) => (
+          {list.map((device) => (
             <tr key={device.id} className="text-slate-700">
               <td className="px-4 py-3 font-medium">{device.name}</td>
               <td className="px-4 py-3">{device.site}</td>
