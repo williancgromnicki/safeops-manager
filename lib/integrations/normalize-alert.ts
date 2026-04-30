@@ -4,11 +4,11 @@ export type NormalizedStatus = 'open' | 'closed';
 export function normalizeSeverity(value?: string | null): NormalizedSeverity {
   const normalized = (value ?? '').trim().toUpperCase();
 
-  if (['CRIT', 'CRITICAL', 'ERROR', 'ERRO'].includes(normalized)) {
+  if (['CRIT', 'CRITICAL', 'ERROR', 'ERRO', 'FAILED', 'FALHA'].includes(normalized)) {
     return 'CRIT';
   }
 
-  if (['WARN', 'WARNING', 'ALERTA'].includes(normalized)) {
+  if (['WARN', 'WARNING', 'ALERTA', 'AVISO'].includes(normalized)) {
     return 'WARN';
   }
 
@@ -18,7 +18,7 @@ export function normalizeSeverity(value?: string | null): NormalizedSeverity {
 export function normalizeStatus(value?: string | null): NormalizedStatus {
   const normalized = (value ?? '').trim().toLowerCase();
 
-  if (['resolvido', 'ok', 'recovered', 'closed'].includes(normalized)) {
+  if (['ok', 'resolvido', 'resolved', 'normalizado', 'recovered', 'closed'].includes(normalized)) {
     return 'closed';
   }
 
@@ -27,7 +27,7 @@ export function normalizeStatus(value?: string | null): NormalizedStatus {
 
 export function isAvailabilityCheck(checkType?: string | null): boolean {
   const normalized = (checkType ?? '').trim().toLowerCase();
-  return normalized === 'availability' || normalized === 'ping';
+  return normalized === 'availability' || normalized === 'ping' || normalized === 'connectivity';
 }
 
 export function slugify(value: string): string {
