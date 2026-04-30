@@ -15,6 +15,17 @@ type AlertContactRow = {
   isActive: boolean;
 };
 
+
+function getCustomerName(
+  customer: { name: string | null } | { name: string | null }[] | null | undefined,
+) {
+  if (Array.isArray(customer)) {
+    return customer[0]?.name ?? '—';
+  }
+
+  return customer?.name ?? '—';
+}
+
 function buildFlags(receivesInfo: boolean, receivesWarn: boolean, receivesCrit: boolean) {
   const flags = [
     receivesInfo ? 'INFO' : null,
@@ -41,7 +52,7 @@ export async function AlertContactsPanel({ selectedCustomerId }: AlertContactsPa
 
   const rows: AlertContactRow[] = (contacts ?? []).map((contact) => ({
     id: contact.id,
-    customer: contact.customer?.name ?? '—',
+    customer: getCustomerName(contact.customer),
     email: contact.email,
     name: contact.name?.trim() || '—',
     flags: buildFlags(contact.receives_info, contact.receives_warn, contact.receives_crit),
