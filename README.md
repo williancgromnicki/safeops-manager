@@ -108,3 +108,29 @@ Diretriz para evolução:
   - registrar auditoria mínima (request id, operação, status)
 
 Esse modelo reduz superfície de ataque e centraliza governança técnica e de segurança.
+
+## 7) Teste do webhook de alertas (server-side)
+
+Exemplo de chamada para o endpoint `POST /api/integrations/tactical/alerts`:
+
+```bash
+curl -X POST "http://localhost:3000/api/integrations/tactical/alerts" \
+  -H "Content-Type: application/json" \
+  -H "x-safeops-webhook-token: $SAFEOPS_WEBHOOK_TOKEN" \
+  -d '{
+    "occurred_at": "2026-04-28T16:51:48",
+    "site": "lamchicotes.com.br",
+    "severity": "WARN",
+    "hostname": "LAM-ENG-001",
+    "check_type": "disk",
+    "client": "LAM Chicotes",
+    "details": "Disk Space Check...",
+    "check_name": "SAFESYS Windows Disk check",
+    "status": "Alerta"
+  }'
+```
+
+Variáveis adicionais obrigatórias para este fluxo:
+
+- `SAFEOPS_WEBHOOK_TOKEN`
+- `SUPABASE_SERVICE_ROLE_KEY` (somente server-side)
