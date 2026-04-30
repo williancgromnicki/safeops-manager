@@ -38,10 +38,15 @@ export default async function DashboardPage() {
   const online = devices.filter((device) => device.status === 'online').length;
   const attention = devices.filter((device) => device.status === 'attention').length;
   const activeAlerts = alerts.filter((alert) => {
-    if (!('status' in alert) || !alert.status) return true;
-    const normalized = alert.status.toLowerCase();
-    return normalized !== 'closed' && normalized !== 'resolved';
-  }).length;
+  const status =
+    'status' in alert && typeof alert.status === 'string'
+      ? alert.status.toLowerCase()
+      : null;
+
+  if (!status) return true;
+
+  return status !== 'closed' && status !== 'resolved';
+}).length;
   const criticalAlerts = alerts.filter((alert) => alert.severity === 'CRIT').length;
 
   const metrics = hasRealData
