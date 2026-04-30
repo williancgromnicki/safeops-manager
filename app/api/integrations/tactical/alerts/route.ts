@@ -25,6 +25,20 @@ function parseOccurredAt(occurredAt?: string): string {
   return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
 }
 
+function buildFingerprint(payload: IncomingPayload, customerId: string): string {
+  const hostname = (payload.hostname ?? '').trim().toLowerCase();
+  const checkType = (payload.check_type ?? '').trim().toLowerCase();
+  const checkName = (payload.check_name ?? '').trim().toLowerCase();
+
+  if (hostname && checkType && checkName) {
+    return `${customerId}::${hostname}::${checkType}::${checkName}`;
+  }
+
+  const alertType = checkType || 'unknown';
+  const title = (payload.check_name ?? 'Alerta operacional').trim().toLowerCase();
+  return `${hostname}::${alertType}::${title}`;
+}
+
 export async function POST(request: NextRequest) {
   const token = request.headers.get('x-safeops-webhook-token');
   const supabaseAdmin = getSupabaseAdmin();
@@ -121,24 +135,148 @@ export async function POST(request: NextRequest) {
     deviceId = newDevice.id as string;
   }
 
-  const { data: alertRecord, error: alertInsertError } = await supabaseAdmin
-    .from('alerts')
-    .insert({
-      customer_id: customerId,
-      device_id: deviceId,
-      source: 'safeops-webhook',
-      alert_type: payload.check_type,
-      severity,
-      title: payload.check_name ?? 'Alerta operacional',
-      details: payload.details,
-      status: normalizedStatus,
-      occurred_at: occurredAt,
-    })
-    .select('id')
-    .single();
+  const alertType = payload.check_type ?? 'operational';
+  const title = payload.check_name ?? 'Alerta operacional';
+  const fingerprint = buildFingerprint(payload, customerId);
 
-  if (alertInsertError) {
-    return NextResponse.json({ ok: false, error: alertInsertError.message }, { status: 500 });
+  let alertRecord: { id: string } | null = null;
+  let action: 'created' | 'updated' | 'closed' | 'closed_without_open_alert';
+
+  if (normalizedStatus === 'open') {
+    const { data: existingOpenAlert, error: existingOpenAlertError } = await supabaseAdmin
+      .from('alerts')
+      .select('id, occurrence_count')
+      .eq('customer_id', customerId)
+      .eq('device_id', deviceId)
+      .eq('fingerprint', fingerprint)
+      .eq('status', 'open')
+      .limit(1)
+      .maybeSingle();
+
+    if (existingOpenAlertError) {
+      return NextResponse.json({ ok: false, error: existingOpenAlertError.message }, { status: 500 });
+    }
+
+    if (existingOpenAlert) {
+      const { data: updatedAlert, error: updateAlertError } = await supabaseAdmin
+        .from('alerts')
+        .update({
+          severity,
+          title,
+          details: payload.details,
+          alert_type: alertType,
+          occurred_at: occurredAt,
+          last_seen_at: occurredAt,
+          occurrence_count: (existingOpenAlert.occurrence_count ?? 0) + 1,
+          resolved_at: null,
+        })
+        .eq('id', existingOpenAlert.id)
+        .select('id')
+        .single();
+
+      if (updateAlertError) {
+        return NextResponse.json({ ok: false, error: updateAlertError.message }, { status: 500 });
+      }
+
+      alertRecord = updatedAlert;
+      action = 'updated';
+    } else {
+      const { data: createdAlert, error: createAlertError } = await supabaseAdmin
+        .from('alerts')
+        .insert({
+          customer_id: customerId,
+          device_id: deviceId,
+          source: 'safeops-webhook',
+          alert_type: alertType,
+          severity,
+          title,
+          details: payload.details,
+          status: 'open',
+          fingerprint,
+          occurrence_count: 1,
+          occurred_at: occurredAt,
+          last_seen_at: occurredAt,
+        })
+        .select('id')
+        .single();
+
+      if (createAlertError) {
+        return NextResponse.json({ ok: false, error: createAlertError.message }, { status: 500 });
+      }
+
+      alertRecord = createdAlert;
+      action = 'created';
+    }
+  } else {
+    const { data: existingOpenAlert, error: existingOpenAlertError } = await supabaseAdmin
+      .from('alerts')
+      .select('id')
+      .eq('customer_id', customerId)
+      .eq('device_id', deviceId)
+      .eq('fingerprint', fingerprint)
+      .eq('status', 'open')
+      .limit(1)
+      .maybeSingle();
+
+    if (existingOpenAlertError) {
+      return NextResponse.json({ ok: false, error: existingOpenAlertError.message }, { status: 500 });
+    }
+
+    const resolutionMessage = payload.details
+      ? `Alerta normalizado/resolvido. ${payload.details}`
+      : 'Alerta normalizado/resolvido.';
+
+    if (existingOpenAlert) {
+      const { data: closedAlert, error: closeAlertError } = await supabaseAdmin
+        .from('alerts')
+        .update({
+          status: 'closed',
+          severity: 'INFO',
+          resolved_at: occurredAt,
+          last_seen_at: occurredAt,
+          details: resolutionMessage,
+          occurred_at: occurredAt,
+          title,
+          alert_type: alertType,
+        })
+        .eq('id', existingOpenAlert.id)
+        .select('id')
+        .single();
+
+      if (closeAlertError) {
+        return NextResponse.json({ ok: false, error: closeAlertError.message }, { status: 500 });
+      }
+
+      alertRecord = closedAlert;
+      action = 'closed';
+    } else {
+      const { data: closedWithoutOpenAlert, error: createClosedAlertError } = await supabaseAdmin
+        .from('alerts')
+        .insert({
+          customer_id: customerId,
+          device_id: deviceId,
+          source: 'safeops-webhook',
+          alert_type: alertType,
+          severity: 'INFO',
+          title,
+          details: resolutionMessage,
+          status: 'closed',
+          fingerprint,
+          occurrence_count: 1,
+          occurred_at: occurredAt,
+          last_seen_at: occurredAt,
+          resolved_at: occurredAt,
+        })
+        .select('id')
+        .single();
+
+      if (createClosedAlertError) {
+        return NextResponse.json({ ok: false, error: createClosedAlertError.message }, { status: 500 });
+      }
+
+      alertRecord = closedWithoutOpenAlert;
+      action = 'closed_without_open_alert';
+    }
   }
 
   const { count: openAlerts, error: openCountError } = await supabaseAdmin
@@ -203,5 +341,6 @@ export async function POST(request: NextRequest) {
     device_id: deviceId,
     alert_id: alertRecord.id,
     email_recipients: emailRecipients,
+    action,
   });
 }
