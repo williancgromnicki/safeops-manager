@@ -1,7 +1,11 @@
 import { type DemoAlert, type Severity } from '@/lib/demo-data';
 import { createClient } from '@/lib/supabase/server';
 
-export type AlertItem = DemoAlert & { status?: string | null };
+export type AlertItem = DemoAlert & {
+  status?: string | null;
+  occurrenceCount?: number | null;
+  lastSeenAt?: string | null;
+};
 
 type AlertRow = {
   id: string;
@@ -14,6 +18,8 @@ type AlertRow = {
   details: string | null;
   status: string | null;
   occurred_at: string;
+  occurrence_count: number | null;
+  last_seen_at: string | null;
 };
 
 function normalizeSeverity(severity: string | null): Severity {
@@ -30,9 +36,11 @@ export async function getAlerts(customerId: string): Promise<AlertItem[]> {
   const { data } = await supabase
     .from('alerts')
     .select(
-      'id, customer_id, device_id, source, alert_type, severity, title, details, status, occurred_at',
+      'id, customer_id, device_id, source, alert_type, severity, title, details, status, occurred_at, occurrence_count, last_seen_at',
     )
     .eq('customer_id', customerId)
+    .order('status', { ascending: true })
+    .order('last_seen_at', { ascending: false, nullsFirst: false })
     .order('occurred_at', { ascending: false })
     .returns<AlertRow[]>();
 
@@ -46,6 +54,8 @@ export async function getAlerts(customerId: string): Promise<AlertItem[]> {
       severity: normalizeSeverity(alert.severity),
       title: alert.title,
       status: alert.status,
+      occurrenceCount: alert.occurrence_count,
+      lastSeenAt: alert.last_seen_at,
     }),
   );
 }
