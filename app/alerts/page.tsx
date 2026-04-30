@@ -3,9 +3,13 @@ import { redirect } from 'next/navigation';
 import { DataTable } from '@/components/DataTable';
 import { EmptyState } from '@/components/EmptyState';
 import { SeverityBadge } from '@/components/SeverityBadge';
-import { getAlerts } from '@/lib/data/get-alerts';
+import { getAlerts, type AlertItem } from '@/lib/data/get-alerts';
 import { getCurrentCustomer } from '@/lib/data/get-current-customer';
 import { DEMO_ALERTS } from '@/lib/demo-data';
+
+function translateStatus(status?: string | null): string {
+  return status?.toLowerCase() === 'closed' ? 'Fechado' : 'Aberto';
+}
 
 export default async function AlertsPage() {
   const customer = await getCurrentCustomer();
@@ -15,7 +19,9 @@ export default async function AlertsPage() {
   }
 
   const alerts = customer ? await getAlerts(customer.customerId) : [];
-  const list = alerts.length > 0 ? alerts : DEMO_ALERTS;
+  const list: AlertItem[] = alerts.length > 0
+    ? alerts
+    : DEMO_ALERTS.map((alert) => ({ ...alert, status: 'open', occurrenceCount: 1, lastSeenAt: null }));
 
   return (
     <section className="space-y-6">
@@ -26,12 +32,18 @@ export default async function AlertsPage() {
           description="Quando eventos forem detectados, eles aparecerão nesta listagem."
         />
       ) : (
-        <DataTable columns={['Alerta', 'Origem', 'Severidade']}>
+        <DataTable columns={['Alerta', 'Origem', 'Severidade', 'Status']}>
           {list.map((alert) => (
             <tr key={alert.id} className="text-slate-700">
-              <td className="px-4 py-3 font-medium">{alert.title}</td>
+              <td className="px-4 py-3 font-medium">
+                {alert.title}
+                {alert.occurrenceCount && alert.occurrenceCount > 1 ? (
+                  <span className="ml-2 text-sm font-semibold text-slate-500">x{alert.occurrenceCount}</span>
+                ) : null}
+              </td>
               <td className="px-4 py-3">{alert.source}</td>
               <td className="px-4 py-3"><SeverityBadge severity={alert.severity} /></td>
+              <td className="px-4 py-3">{translateStatus(alert.status)}</td>
             </tr>
           ))}
         </DataTable>
