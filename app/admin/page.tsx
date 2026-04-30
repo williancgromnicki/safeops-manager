@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { DataTable } from '@/components/DataTable';
 import { EmptyState } from '@/components/EmptyState';
 import { LoadingState } from '@/components/LoadingState';
+import { AlertContactsPanel } from '@/components/AlertContactsPanel';
 import { getCurrentUser } from '@/lib/auth/getCurrentUser';
 import { DEMO_CUSTOMERS } from '@/lib/demo-data';
 import { createClient } from '@/lib/supabase/server';
@@ -44,6 +45,7 @@ export default async function AdminPage() {
           ))}
         </DataTable>
       )}
+      <AlertContactsPanel />
     </section>
   );
 }
