@@ -171,10 +171,37 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: updateDeviceError.message }, { status: 500 });
   }
 
+  const { data: activeContacts, error: contactsReadError } = await supabaseAdmin
+    .from('customer_alert_contacts')
+    .select('email, receives_info, receives_warn, receives_crit')
+    .eq('customer_id', customerId)
+    .eq('is_active', true);
+
+  if (contactsReadError) {
+    return NextResponse.json({ ok: false, error: contactsReadError.message }, { status: 500 });
+  }
+
+  const filteredContactEmails = (activeContacts ?? [])
+    .filter((contact) => {
+      if (severity === 'INFO') return contact.receives_info === true;
+      if (severity === 'WARN') return contact.receives_warn === true;
+      return contact.receives_crit === true;
+    })
+    .map((contact) => contact.email);
+
+  const emailRecipients = Array.from(
+    new Set(
+      [...filteredContactEmails, 'suporte@safesys.net.br']
+        .map((email) => email?.trim().toLowerCase())
+        .filter((email): email is string => Boolean(email)),
+    ),
+  );
+
   return NextResponse.json({
     ok: true,
     customer_id: customerId,
     device_id: deviceId,
     alert_id: alertRecord.id,
+    email_recipients: emailRecipients,
   });
 }
