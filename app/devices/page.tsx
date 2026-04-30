@@ -1,121 +1,115 @@
-import { DEMO_DEVICES, type DemoDevice, type OperationalStatus } from '@/lib/demo-data';
+import { redirect } from 'next/navigation';
 
-const devices: DemoDevice[] = DEMO_DEVICES;
+import { DataTable } from '@/components/DataTable';
+import { EmptyState } from '@/components/EmptyState';
+import { getCurrentUser } from '@/lib/auth/getCurrentUser';
+import {
+  DEMO_DEVICES,
+  type DemoDevice,
+  type OperationalStatus,
+} from '@/lib/demo-data';
+import { createClient } from '@/lib/supabase/server';
 
-const statusConfig: Record<
-  OperationalStatus,
-  {
-    label: string;
-    className: string;
-  }
-> = {
-  online: {
-    label: 'Online',
-    className: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
-  },
-  offline: {
-    label: 'Offline',
-    className: 'bg-rose-50 text-rose-700 ring-rose-600/20',
-  },
-  attention: {
-    label: 'Atenção',
-    className: 'bg-amber-50 text-amber-700 ring-amber-600/20',
-  },
-  unknown: {
-    label: 'Desconhecido',
-    className: 'bg-slate-50 text-slate-700 ring-slate-600/20',
-  },
+const statusLabel: Record<OperationalStatus, string> = {
+  online: 'Online',
+  offline: 'Offline',
+  attention: 'Atenção',
+  unknown: 'Desconhecido',
+};
+
+const statusClassName: Record<OperationalStatus, string> = {
+  online: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
+  offline: 'bg-rose-50 text-rose-700 ring-rose-600/20',
+  attention: 'bg-amber-50 text-amber-700 ring-amber-600/20',
+  unknown: 'bg-slate-50 text-slate-700 ring-slate-600/20',
 };
 
 function StatusBadge({ status }: { status: OperationalStatus }) {
-  const config = statusConfig[status];
-
   return (
     <span
       className={[
         'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset',
-        config.className,
+        statusClassName[status],
       ].join(' ')}
     >
-      {config.label}
+      {statusLabel[status]}
     </span>
   );
 }
 
-export default function DevicesPage() {
+function normalizeStatus(status: string | null): OperationalStatus {
+  if (status === 'online') return 'online';
+  if (status === 'offline') return 'offline';
+  if (status === 'attention') return 'attention';
+  return 'unknown';
+}
+
+export default async function DevicesPage() {
+  const user = await getCurrentUser();
+
+  if (!user) {
+    redirect('/login');
+  }
+
+  const supabase = await createClient();
+
+  const { data } = await supabase
+    .from('devices')
+    .select(
+      'id, hostname, site, status, operating_system, last_seen_at, active_alerts',
+    )
+    .order('hostname', { ascending: true });
+
+  const devices: DemoDevice[] =
+    data && data.length > 0
+      ? data.map((device): DemoDevice => ({
+          id: device.id,
+          customerId: user.id,
+          name: device.hostname,
+          site: device.site ?? 'Não informado',
+          status: normalizeStatus(device.status),
+          operatingSystem: device.operating_system ?? 'Não informado',
+          lastSeen: device.last_seen_at
+            ? new Date(device.last_seen_at).toLocaleString('pt-BR')
+            : 'Sem informação recente',
+          activeAlerts: device.active_alerts ?? 0,
+        }))
+      : DEMO_DEVICES;
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900">
-          Dispositivos
-        </h1>
-        <p className="mt-2 text-sm text-slate-600">
-          Acompanhe os dispositivos monitorados pelo SafeOps Manager.
-        </p>
-      </div>
+    <section className="space-y-6">
+      <h2 className="section-title">Dispositivos</h2>
 
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-6 py-4">
-          <h2 className="text-lg font-semibold text-slate-900">
-            Dispositivos monitorados
-          </h2>
-          <p className="mt-1 text-sm text-slate-600">
-            Visão geral dos equipamentos vinculados ao ambiente do cliente.
-          </p>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-200">
-            <thead className="bg-slate-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Nome
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Local
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Status
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Sistema operacional
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Último check-in
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Alertas ativos
-                </th>
-              </tr>
-            </thead>
-
-            <tbody className="divide-y divide-slate-100 bg-white">
-              {devices.map((device) => (
-                <tr key={device.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 font-medium text-slate-900">
-                    {device.name}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {device.site}
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusBadge status={device.status} />
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {device.operatingSystem}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {device.lastSeen}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {device.activeAlerts}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+      {devices.length === 0 ? (
+        <EmptyState
+          title="Nenhum dispositivo registrado"
+          description="Quando dispositivos forem cadastrados ou sincronizados, eles aparecerão nesta listagem."
+        />
+      ) : (
+        <DataTable
+          columns={[
+            'Dispositivo',
+            'Local',
+            'Status',
+            'Sistema operacional',
+            'Último check-in',
+            'Alertas ativos',
+          ]}
+        >
+          {devices.map((device) => (
+            <tr key={device.id} className="text-slate-700">
+              <td className="px-4 py-3 font-medium">{device.name}</td>
+              <td className="px-4 py-3">{device.site}</td>
+              <td className="px-4 py-3">
+                <StatusBadge status={device.status} />
+              </td>
+              <td className="px-4 py-3">{device.operatingSystem}</td>
+              <td className="px-4 py-3">{device.lastSeen}</td>
+              <td className="px-4 py-3">{device.activeAlerts}</td>
+            </tr>
+          ))}
+        </DataTable>
+      )}
+    </section>
   );
 }
