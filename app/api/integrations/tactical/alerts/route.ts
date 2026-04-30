@@ -289,18 +289,33 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: openCountError.message }, { status: 500 });
   }
 
-  const hasOpenAlerts = (openAlerts ?? 0) > 0;
-  const nextDeviceStatus = hasOpenAlerts
-    ? isOfflineCheck
-      ? 'offline'
-      : 'attention'
-    : 'unknown';
+  const openAlertsCount = openAlerts ?? 0;
+  const hasOpenAlerts = openAlertsCount > 0;
+  const isOpenEvent = normalizedStatus === 'open';
+  const isCritical = severity === 'CRIT';
+  const isWarning = severity === 'WARN';
+
+  let nextDeviceStatus: 'online' | 'offline' | 'attention';
+
+  if (isOpenEvent) {
+    if (isCritical && isOfflineCheck) {
+      nextDeviceStatus = 'offline';
+    } else if (isCritical || isWarning) {
+      nextDeviceStatus = 'attention';
+    } else {
+      nextDeviceStatus = 'attention';
+    }
+  } else if (!hasOpenAlerts) {
+    nextDeviceStatus = 'online';
+  } else {
+    nextDeviceStatus = 'attention';
+  }
 
   const { error: updateDeviceError } = await supabaseAdmin
     .from('devices')
     .update({
       last_seen_at: occurredAt,
-      active_alerts: openAlerts ?? 0,
+      active_alerts: openAlertsCount,
       status: nextDeviceStatus,
     })
     .eq('id', deviceId);
