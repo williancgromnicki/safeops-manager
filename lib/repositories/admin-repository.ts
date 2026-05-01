@@ -12,7 +12,9 @@ type CustomerRow = {
   created_at: string;
 };
 
-export async function listCustomersForAdminContext(customerIds?: string[]): Promise<AdminCustomerRecord[]> {
+export async function listCustomersForAdminContext(
+  customerIds?: string[],
+): Promise<AdminCustomerRecord[]> {
   const supabase = getSupabaseAdmin();
 
   let query = supabase
