@@ -5,7 +5,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { LoadingState } from '@/components/LoadingState';
 import { AlertContactsPanel } from '@/components/AlertContactsPanel';
 import { DEMO_CUSTOMERS } from '@/lib/demo-data';
-import { listAlertContactsService } from '@/lib/services/alert-contacts';
+import { listAlertContactsAction } from '@/app/admin/actions/alert-contacts';
 import { listAllowedCustomersForAdminService } from '@/lib/services/admin';
 
 export default async function AdminPage() {
@@ -25,7 +25,7 @@ export default async function AdminPage() {
     ? customers.map((customer) => ({ id: customer.id, name: customer.name, source: 'Banco de dados' }))
     : DEMO_CUSTOMERS.map((customer) => ({ id: customer.id, name: customer.name, source: 'Demo fallback' }));
 
-  const alertContacts = await listAlertContactsService();
+  const alertContacts = await listAlertContactsAction();
 
   return (
     <section className="space-y-6">
