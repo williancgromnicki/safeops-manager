@@ -6,7 +6,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { DEMO_CUSTOMERS } from '@/lib/demo-data';
 import { listAllowedCustomersForAdminService } from '@/lib/services/admin';
 import { listAlertContactsService } from '@/lib/services/alert-contacts';
-
+export const dynamic = 'force-dynamic';
 export default async function AdminPage() {
   let customers = [] as Awaited<
     ReturnType<typeof listAllowedCustomersForAdminService>
