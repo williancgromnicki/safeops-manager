@@ -1,6 +1,9 @@
 import { createClient } from '@/lib/supabase/server';
 import {
-  listAlertContactsByCustomer,
+  createAlertContact as createAlertContactRepository,
+  deactivateAlertContact as deactivateAlertContactRepository,
+  listAlertContacts,
+  updateAlertContact as updateAlertContactRepository,
   type AlertContactRecord,
 } from '@/lib/repositories/alert-contacts-repository';
 
@@ -8,13 +11,78 @@ type UserProfile = {
   role: string | null;
 };
 
+type AlertPermissionFlags = {
+  receivesInfo: boolean;
+  receivesWarn: boolean;
+  receivesCrit: boolean;
+};
+
 export type ListAlertContactsInput = {
   customerId?: string;
 };
 
-export async function listAlertContactsService(
-  input: ListAlertContactsInput = {},
-): Promise<AlertContactRecord[]> {
+export type CreateAlertContactInput = {
+  customerId: string;
+  email: string;
+  name?: string | null;
+} & AlertPermissionFlags;
+
+export type UpdateAlertContactInput = {
+  id: string;
+  customerId: string;
+  email: string;
+  name?: string | null;
+} & AlertPermissionFlags;
+
+export type DeactivateAlertContactInput = {
+  id: string;
+  customerId: string;
+};
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function validateEmail(email: string): string {
+  const normalized = email.trim().toLowerCase();
+
+  if (!EMAIL_REGEX.test(normalized)) {
+    throw new Error('Validation error: invalid e-mail format.');
+  }
+
+  return normalized;
+}
+
+function validatePermissions(flags: AlertPermissionFlags): void {
+  if (!flags.receivesInfo && !flags.receivesWarn && !flags.receivesCrit) {
+    throw new Error('Validation error: at least one permission must be active.');
+  }
+}
+
+async function requireAdminAndGetAllowedCustomers(userId: string): Promise<string[]> {
+  const supabase = await createClient();
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('user_id', userId)
+    .maybeSingle<UserProfile>();
+
+  if (profile?.role !== 'admin') {
+    throw new Error('Forbidden: admin role is required.');
+  }
+
+  const { data: accesses, error } = await supabase
+    .from('user_customer_access')
+    .select('customer_id')
+    .eq('user_id', userId);
+
+  if (error) {
+    throw new Error(`Failed to verify customer access: ${error.message}`);
+  }
+
+  return (accesses ?? []).map((item) => item.customer_id as string);
+}
+
+async function requireAuthenticatedAdmin(customerId?: string): Promise<{ userId: string; allowedCustomerIds: string[] }> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -24,28 +92,66 @@ export async function listAlertContactsService(
     throw new Error('Unauthorized: user not authenticated.');
   }
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('user_id', user.id)
-    .maybeSingle<UserProfile>();
+  const allowedCustomerIds = await requireAdminAndGetAllowedCustomers(user.id);
 
-  if (profile?.role !== 'admin') {
-    throw new Error('Forbidden: admin role is required.');
+  if (customerId && !allowedCustomerIds.includes(customerId)) {
+    throw new Error('Forbidden: no access to this customer.');
   }
 
-  if (input.customerId) {
-    const { data: access } = await supabase
-      .from('user_customer_access')
-      .select('id')
-      .eq('user_id', user.id)
-      .eq('customer_id', input.customerId)
-      .maybeSingle();
+  return { userId: user.id, allowedCustomerIds };
+}
 
-    if (!access) {
-      throw new Error('Forbidden: no access to this customer.');
-    }
+export async function listAlertContactsService(
+  input: ListAlertContactsInput = {},
+): Promise<AlertContactRecord[]> {
+  const { allowedCustomerIds } = await requireAuthenticatedAdmin(input.customerId);
+
+  const targetCustomerIds = input.customerId
+    ? [input.customerId]
+    : allowedCustomerIds;
+
+  if (targetCustomerIds.length === 0) {
+    return [];
   }
 
-  return listAlertContactsByCustomer(input.customerId);
+  return listAlertContacts(targetCustomerIds);
+}
+
+export async function createAlertContact(input: CreateAlertContactInput): Promise<AlertContactRecord> {
+  await requireAuthenticatedAdmin(input.customerId);
+
+  const email = validateEmail(input.email);
+  validatePermissions(input);
+
+  return createAlertContactRepository({
+    customerId: input.customerId,
+    email,
+    name: input.name ?? null,
+    receivesInfo: input.receivesInfo,
+    receivesWarn: input.receivesWarn,
+    receivesCrit: input.receivesCrit,
+  });
+}
+
+export async function updateAlertContact(input: UpdateAlertContactInput): Promise<AlertContactRecord> {
+  await requireAuthenticatedAdmin(input.customerId);
+
+  const email = validateEmail(input.email);
+  validatePermissions(input);
+
+  return updateAlertContactRepository({
+    id: input.id,
+    customerId: input.customerId,
+    email,
+    name: input.name ?? null,
+    receivesInfo: input.receivesInfo,
+    receivesWarn: input.receivesWarn,
+    receivesCrit: input.receivesCrit,
+  });
+}
+
+export async function deactivateAlertContact(input: DeactivateAlertContactInput): Promise<AlertContactRecord> {
+  await requireAuthenticatedAdmin(input.customerId);
+
+  return deactivateAlertContactRepository(input.id, input.customerId);
 }
