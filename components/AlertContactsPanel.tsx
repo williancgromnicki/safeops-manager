@@ -11,10 +11,11 @@ type AlertContactRow = {
   customer: string;
   email: string;
   name: string;
-  flags: string;
+  receivesInfo: boolean;
+  receivesWarn: boolean;
+  receivesCrit: boolean;
   isActive: boolean;
 };
-
 
 function getCustomerName(
   customer: { name: string | null } | { name: string | null }[] | null | undefined,
@@ -26,14 +27,24 @@ function getCustomerName(
   return customer?.name ?? '—';
 }
 
-function buildFlags(receivesInfo: boolean, receivesWarn: boolean, receivesCrit: boolean) {
-  const flags = [
-    receivesInfo ? 'INFO' : null,
-    receivesWarn ? 'WARN' : null,
-    receivesCrit ? 'CRIT' : null,
-  ].filter(Boolean);
+function BooleanBadge({ value }: { value: boolean }) {
+  if (value) {
+    return <span className="inline-flex rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">✓</span>;
+  }
 
-  return flags.length > 0 ? flags.join(' / ') : '—';
+  return <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-500">—</span>;
+}
+
+function ActiveStatusBadge({ isActive }: { isActive: boolean }) {
+  return (
+    <span
+      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+        isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
+      }`}
+    >
+      {isActive ? 'Ativo' : 'Inativo'}
+    </span>
+  );
 }
 
 export async function AlertContactsPanel({ selectedCustomerId }: AlertContactsPanelProps) {
@@ -55,7 +66,9 @@ export async function AlertContactsPanel({ selectedCustomerId }: AlertContactsPa
     customer: getCustomerName(contact.customer),
     email: contact.email,
     name: contact.name?.trim() || '—',
-    flags: buildFlags(contact.receives_info, contact.receives_warn, contact.receives_crit),
+    receivesInfo: contact.receives_info,
+    receivesWarn: contact.receives_warn,
+    receivesCrit: contact.receives_crit,
     isActive: contact.is_active,
   }));
 
@@ -68,14 +81,24 @@ export async function AlertContactsPanel({ selectedCustomerId }: AlertContactsPa
           description="Os contatos configurados para receber notificações dos clientes aparecerão aqui."
         />
       ) : (
-        <DataTable columns={['Customer', 'E-mail', 'Nome', 'Flags (INFO/WARN/CRIT)', 'Ativo']}>
+        <DataTable columns={['Cliente', 'Nome', 'E-mail', 'Recebe INFO', 'Recebe WARN', 'Recebe CRIT', 'Status']}>
           {rows.map((row) => (
             <tr key={row.id} className="text-slate-700">
               <td className="px-4 py-3 font-medium">{row.customer}</td>
-              <td className="px-4 py-3">{row.email}</td>
               <td className="px-4 py-3">{row.name}</td>
-              <td className="px-4 py-3">{row.flags}</td>
-              <td className="px-4 py-3">{row.isActive ? 'Sim' : 'Não'}</td>
+              <td className="px-4 py-3">{row.email}</td>
+              <td className="px-4 py-3">
+                <BooleanBadge value={row.receivesInfo} />
+              </td>
+              <td className="px-4 py-3">
+                <BooleanBadge value={row.receivesWarn} />
+              </td>
+              <td className="px-4 py-3">
+                <BooleanBadge value={row.receivesCrit} />
+              </td>
+              <td className="px-4 py-3">
+                <ActiveStatusBadge isActive={row.isActive} />
+              </td>
             </tr>
           ))}
         </DataTable>
