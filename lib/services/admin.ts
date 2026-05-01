@@ -9,7 +9,12 @@ type UserCustomerAccess = {
   customer_id: string;
 };
 
-export async function listAllowedCustomersForAdminService(): Promise<AdminCustomerRecord[]> {
+export type AdminCustomersResult = {
+  customers: AdminCustomerRecord[];
+  isAdmin: boolean;
+};
+
+export async function listAllowedCustomersForAdminService(): Promise<AdminCustomersResult> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -22,12 +27,8 @@ export async function listAllowedCustomersForAdminService(): Promise<AdminCustom
   const { data: profile } = await supabase
     .from('profiles')
     .select('role')
-    .eq('user_id', user.id)
+    .eq('id', user.id)
     .maybeSingle<UserProfile>();
-
-  if (profile?.role !== 'admin') {
-    throw new Error('Forbidden: admin role is required.');
-  }
 
   const { data: allowedCustomers, error: allowedCustomersError } = await supabase
     .from('user_customer_access')
@@ -41,8 +42,10 @@ export async function listAllowedCustomersForAdminService(): Promise<AdminCustom
   const customerIds = (allowedCustomers as UserCustomerAccess[] | null)?.map((row) => row.customer_id) ?? [];
 
   if (customerIds.length === 0) {
-    return [];
+    return { customers: [], isAdmin: profile?.role === 'admin' };
   }
 
-  return listCustomersForAdminContext(customerIds);
+  const customers = await listCustomersForAdminContext(customerIds);
+
+  return { customers, isAdmin: profile?.role === 'admin' };
 }

@@ -5,20 +5,24 @@ import { EmptyState } from '@/components/EmptyState';
 import { LoadingState } from '@/components/LoadingState';
 import { AlertContactsPanel } from '@/components/AlertContactsPanel';
 import { DEMO_CUSTOMERS } from '@/lib/demo-data';
-import { listAlertContactsAction } from '@/app/admin/actions/alert-contacts';
+import { listAlertContactsService } from '@/lib/services/alert-contacts';
 import { listAllowedCustomersForAdminService } from '@/lib/services/admin';
 
 export default async function AdminPage() {
-  let customers = [] as Awaited<ReturnType<typeof listAllowedCustomersForAdminService>>;
+  let customers = [] as Awaited<ReturnType<typeof listAllowedCustomersForAdminService>>['customers'];
+  let isAdmin = false;
 
   try {
-    customers = await listAllowedCustomersForAdminService();
+    const result = await listAllowedCustomersForAdminService();
+    customers = result.customers;
+    isAdmin = result.isAdmin;
   } catch (error) {
     if (error instanceof Error && error.message.includes('Unauthorized')) {
       redirect('/login');
     }
 
-    throw error;
+    customers = [];
+    isAdmin = false;
   }
 
   const rows = customers.length > 0
@@ -31,6 +35,11 @@ export default async function AdminPage() {
     <section className="space-y-6">
       <h2 className="section-title">Admin</h2>
       <LoadingState label="Carregando configurações administrativas..." />
+      {!isAdmin && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Você não tem permissão para alterar contatos de alerta.
+        </p>
+      )}
       {rows.length === 0 ? (
         <EmptyState
           title="Nenhum cliente disponível"
