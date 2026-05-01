@@ -24,7 +24,7 @@ type AlertContactRow = {
   customer: { name: string | null } | { name: string | null }[] | null;
 };
 
-type UpsertAlertContactInput = {
+type CreateAlertContactInput = {
   id?: string;
   customerId: string;
   email: string;
@@ -106,7 +106,7 @@ export async function listAlertContacts(
 }
 
 export async function createAlertContact(
-  input: UpsertAlertContactInput,
+  input: CreateAlertContactInput,
 ): Promise<AlertContactRecord> {
   const supabase = getSupabaseAdmin();
 
@@ -131,8 +131,18 @@ export async function createAlertContact(
   return fetchAlertContact(data.id as string, data.customer_id as string);
 }
 
+type UpdateAlertContactInput = {
+  id: string;
+  customerId: string;
+  email: string;
+  name: string | null;
+  receivesInfo: boolean;
+  receivesWarn: boolean;
+  receivesCrit: boolean;
+};
+
 export async function updateAlertContact(
-  input: UpsertAlertContactInput,
+  input: UpdateAlertContactInput,
 ): Promise<AlertContactRecord> {
   if (!input.id) {
     throw new Error('Failed to update alert contact: missing id.');
@@ -148,7 +158,6 @@ export async function updateAlertContact(
       receives_info: input.receivesInfo,
       receives_warn: input.receivesWarn,
       receives_crit: input.receivesCrit,
-      is_active: input.isActive,
     })
     .eq('id', input.id)
     .eq('customer_id', input.customerId);
