@@ -7,6 +7,7 @@ import {
   updateAlertContact as updateAlertContactRepository,
   type AlertContactRecord,
 } from '@/lib/repositories/alert-contacts-repository';
+import { writeAuditLog } from '@/lib/repositories/audit-log-repository';
 
 type UserProfile = {
   role: string | null;
@@ -142,12 +143,12 @@ export async function listAlertContactsService(
 export async function createAlertContact(
   input: CreateAlertContactInput,
 ): Promise<AlertContactRecord> {
-  await requireAuthenticatedAdmin(input.customerId);
+  const { userId } = await requireAuthenticatedAdmin(input.customerId);
 
   const email = validateEmail(input.email);
   validatePermissions(input);
 
-  return createAlertContactRepository({
+  const createdContact = await createAlertContactRepository({
     customerId: input.customerId,
     email,
     name: input.name ?? null,
@@ -155,12 +156,22 @@ export async function createAlertContact(
     receivesWarn: input.receivesWarn,
     receivesCrit: input.receivesCrit,
   });
+
+  await writeAuditLog({
+    userId,
+    customerId: createdContact.customerId,
+    contactId: createdContact.id,
+    action: 'alert_contact_created',
+    context: { email: createdContact.email },
+  });
+
+  return createdContact;
 }
 
 export async function updateAlertContact(
   input: UpdateAlertContactInput,
 ): Promise<AlertContactRecord> {
-  await requireAuthenticatedAdmin(input.customerId);
+  const { userId } = await requireAuthenticatedAdmin(input.customerId);
 
   const email = validateEmail(input.email);
   validatePermissions(input);
@@ -175,29 +186,77 @@ export async function updateAlertContact(
     receivesCrit: input.receivesCrit,
   });
 
+  await writeAuditLog({
+    userId,
+    customerId: updatedContact.customerId,
+    contactId: updatedContact.id,
+    action: 'alert_contact_updated',
+    context: { email: updatedContact.email },
+  });
+
   if (typeof input.isActive !== 'boolean' || updatedContact.isActive === input.isActive) {
     return updatedContact;
   }
 
   if (input.isActive) {
-    return activateAlertContactRepository(input.id, input.customerId);
+    const activatedContact = await activateAlertContactRepository(input.id, input.customerId);
+
+    await writeAuditLog({
+      userId,
+      customerId: activatedContact.customerId,
+      contactId: activatedContact.id,
+      action: 'alert_contact_enabled',
+      context: { source: 'update_alert_contact' },
+    });
+
+    return activatedContact;
   }
 
-  return deactivateAlertContactRepository(input.id, input.customerId);
+  const deactivatedContact = await deactivateAlertContactRepository(input.id, input.customerId);
+
+  await writeAuditLog({
+    userId,
+    customerId: deactivatedContact.customerId,
+    contactId: deactivatedContact.id,
+    action: 'alert_contact_disabled',
+    context: { source: 'update_alert_contact' },
+  });
+
+  return deactivatedContact;
 }
 
 export async function deactivateAlertContact(
   input: DeactivateAlertContactInput,
 ): Promise<AlertContactRecord> {
-  await requireAuthenticatedAdmin(input.customerId);
+  const { userId } = await requireAuthenticatedAdmin(input.customerId);
 
-  return deactivateAlertContactRepository(input.id, input.customerId);
+  const deactivatedContact = await deactivateAlertContactRepository(input.id, input.customerId);
+
+  await writeAuditLog({
+    userId,
+    customerId: deactivatedContact.customerId,
+    contactId: deactivatedContact.id,
+    action: 'alert_contact_disabled',
+    context: { source: 'toggle_alert_contact' },
+  });
+
+  return deactivatedContact;
 }
 
 export async function activateAlertContact(
   input: ActivateAlertContactInput,
 ): Promise<AlertContactRecord> {
-  await requireAuthenticatedAdmin(input.customerId);
+  const { userId } = await requireAuthenticatedAdmin(input.customerId);
 
-  return activateAlertContactRepository(input.id, input.customerId);
+  const activatedContact = await activateAlertContactRepository(input.id, input.customerId);
+
+  await writeAuditLog({
+    userId,
+    customerId: activatedContact.customerId,
+    contactId: activatedContact.id,
+    action: 'alert_contact_enabled',
+    context: { source: 'toggle_alert_contact' },
+  });
+
+  return activatedContact;
 }
