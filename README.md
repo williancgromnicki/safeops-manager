@@ -68,12 +68,72 @@ As migrations SQL ficam em `supabase/migrations/`.
 4. Valide tabelas, índices, policies e permissões após a execução.
 5. Registre no changelog interno qual migration foi aplicada, por quem e em qual ambiente.
 
+### Ordem de aplicação — migrations de contatos de alerta
+Aplicar na ordem abaixo (nomenclatura por timestamp):
+
+1. `supabase/migrations/20260429120000_initial_schema.sql` (baseline com `customers` e `user_customer_access`).
+2. `supabase/migrations/20260430110000_customer_alert_contacts.sql` (tabela `customer_alert_contacts`, índices e policy de leitura).
+3. `supabase/migrations/20260501101000_customer_alert_contacts_policy_hardening.sql` (policies de escrita para `authenticated` + role `service_role`).
+
+### Passo a passo manual no Supabase SQL Editor
+1. No Supabase, abra **SQL Editor > New query**.
+2. Execute cada migration completa, separadamente, respeitando a ordem acima.
+3. Em produção, execute em janela de manutenção e aguarde cada query terminar antes da próxima.
+4. Registre o horário de aplicação e o usuário executor em log operacional interno.
+
+Comandos SQL de verificação rápida (rodar após aplicação):
+
+```sql
+-- 1) tabela e colunas esperadas
+SELECT column_name, data_type, is_nullable
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name = 'customer_alert_contacts'
+ORDER BY ordinal_position;
+
+-- 2) índices
+SELECT indexname, indexdef
+FROM pg_indexes
+WHERE schemaname = 'public'
+  AND tablename = 'customer_alert_contacts'
+ORDER BY indexname;
+
+-- 3) RLS habilitado
+SELECT relname, relrowsecurity
+FROM pg_class
+WHERE relname = 'customer_alert_contacts';
+
+-- 4) policies
+SELECT policyname, permissive, roles, cmd, qual, with_check
+FROM pg_policies
+WHERE schemaname = 'public'
+  AND tablename = 'customer_alert_contacts'
+ORDER BY policyname;
+```
+
+### Checklist pós-aplicação (contatos de alerta)
+- [ ] Tabela `public.customer_alert_contacts` existe e possui FK para `public.customers(id)`.
+- [ ] Constraint única `(customer_id, email)` criada.
+- [ ] Índices `idx_customer_alert_contacts_customer_id` e `idx_customer_alert_contacts_customer_id_is_active` presentes.
+- [ ] RLS habilitado (`relrowsecurity = true`).
+- [ ] Policies de `SELECT`, `INSERT` e `UPDATE` para `authenticated` aplicadas.
+- [ ] Policy `service_role_manage_all` aplicada para operações administrativas server-side.
+
 ### Boas práticas
 - Aplicar primeiro em desenvolvimento/staging, depois em produção.
 - Evitar mudanças destrutivas sem plano de rollback.
 - Executar em janela de manutenção quando houver risco de lock/indisponibilidade.
 
-## 4) Deploy na Vercel
+## 4) Nota arquitetural: repository e portabilidade de persistência
+
+O repository atual de contatos de alerta utiliza **Supabase Admin Client** (`getSupabaseAdmin`) para operações server-side com credenciais de service role. Essa decisão facilita administração centralizada no backend, mantendo o client sem privilégios elevados.
+
+Diretriz de evolução:
+- preservar a interface pública do repository (contratos de entrada/saída em `lib/repositories/alert-contacts-repository.ts`);
+- permitir troca futura do mecanismo de persistência para PostgreSQL direto, Prisma ou Drizzle sem impacto nas camadas de serviço/rota;
+- manter mapeamento explícito entre modelo relacional e `AlertContactRecord` para evitar acoplamento do domínio ao driver/ORM.
+
+## 5) Deploy na Vercel
 
 1. Conecte o repositório no painel da Vercel.
 2. Configure as variáveis de ambiente por ambiente (Preview/Production):
@@ -87,7 +147,7 @@ As migrations SQL ficam em `supabase/migrations/`.
    - autenticação
    - leitura/escrita esperada no Supabase
 
-## 5) Segurança
+## 6) Segurança
 
 - **Não expor `SUPABASE_SERVICE_ROLE_KEY` no client**.
 - **Não criar endpoints proxy genéricos** que repassem payloads arbitrários para serviços externos.
@@ -95,7 +155,7 @@ As migrations SQL ficam em `supabase/migrations/`.
 - Validar e sanitizar toda entrada externa em APIs server-side.
 - Aplicar princípio do menor privilégio para credenciais e roles.
 
-## 6) Plano futuro: integração com engine interna
+## 7) Plano futuro: integração com engine interna
 
 Diretriz para evolução:
 
@@ -109,7 +169,7 @@ Diretriz para evolução:
 
 Esse modelo reduz superfície de ataque e centraliza governança técnica e de segurança.
 
-## 7) Teste do webhook de alertas (server-side)
+## 8) Teste do webhook de alertas (server-side)
 
 Exemplo de chamada para o endpoint `POST /api/integrations/tactical/alerts`:
 
