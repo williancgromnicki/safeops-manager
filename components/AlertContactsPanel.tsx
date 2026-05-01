@@ -64,8 +64,8 @@ export async function AlertContactsPanel({ selectedCustomerId }: AlertContactsPa
       <h3 className="section-title">Contatos de alerta</h3>
       {rows.length === 0 ? (
         <EmptyState
-          title="Nenhum contato de alerta encontrado"
-          description="O CRUD de contatos de alerta será disponibilizado em uma próxima fase."
+          title="Nenhum contato de alerta cadastrado"
+          description="Os contatos configurados para receber notificações dos clientes aparecerão aqui."
         />
       ) : (
         <DataTable columns={['Customer', 'E-mail', 'Nome', 'Flags (INFO/WARN/CRIT)', 'Ativo']}>
