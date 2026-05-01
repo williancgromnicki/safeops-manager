@@ -7,8 +7,9 @@ import {
   type AlertContactRecord,
 } from '@/lib/repositories/alert-contacts-repository';
 
-type UserProfile = {
-  role: string | null;
+
+type UserCustomerAccess = {
+  customer_id: string;
 };
 
 type AlertPermissionFlags = {
@@ -66,8 +67,8 @@ async function requireAdminAndGetAllowedCustomers(userId: string): Promise<strin
     .eq('user_id', userId)
     .maybeSingle<UserProfile>();
 
-  if (profile?.role !== 'admin') {
-    throw new Error('Forbidden: admin role is required.');
+  if (accessError) {
+    throw new Error(`Failed to list customer access: ${accessError.message}`);
   }
 
   const { data: accesses, error } = await supabase

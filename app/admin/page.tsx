@@ -31,6 +31,11 @@ export default async function AdminPage() {
     <section className="space-y-6">
       <h2 className="section-title">Admin</h2>
       <LoadingState label="Carregando configurações administrativas..." />
+      {!isAdmin && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Você não tem permissão para alterar contatos de alerta.
+        </p>
+      )}
       {rows.length === 0 ? (
         <EmptyState
           title="Nenhum cliente disponível"
