@@ -6,6 +6,7 @@ import { LoadingState } from '@/components/LoadingState';
 import { AlertContactsPanel } from '@/components/AlertContactsPanel';
 import { getCurrentUser } from '@/lib/auth/getCurrentUser';
 import { DEMO_CUSTOMERS } from '@/lib/demo-data';
+import { listAlertContactsService } from '@/lib/services/alert-contacts';
 import { createClient } from '@/lib/supabase/server';
 
 export default async function AdminPage() {
@@ -24,6 +25,8 @@ export default async function AdminPage() {
   const rows = customers && customers.length > 0
     ? customers.map((customer) => ({ id: customer.id, name: customer.name, source: 'Banco de dados' }))
     : DEMO_CUSTOMERS.map((customer) => ({ id: customer.id, name: customer.name, source: 'Demo fallback' }));
+
+  const alertContacts = await listAlertContactsService();
 
   return (
     <section className="space-y-6">
@@ -45,7 +48,7 @@ export default async function AdminPage() {
           ))}
         </DataTable>
       )}
-      <AlertContactsPanel />
+      <AlertContactsPanel contacts={alertContacts} />
     </section>
   );
 }

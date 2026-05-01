@@ -1,31 +1,10 @@
 import { DataTable } from '@/components/DataTable';
 import { EmptyState } from '@/components/EmptyState';
-import { createClient } from '@/lib/supabase/server';
+import type { AlertContactRecord } from '@/lib/repositories/alert-contacts-repository';
 
 type AlertContactsPanelProps = {
-  selectedCustomerId?: string;
+  contacts: AlertContactRecord[];
 };
-
-type AlertContactRow = {
-  id: string;
-  customer: string;
-  email: string;
-  name: string;
-  receivesInfo: boolean;
-  receivesWarn: boolean;
-  receivesCrit: boolean;
-  isActive: boolean;
-};
-
-function getCustomerName(
-  customer: { name: string | null } | { name: string | null }[] | null | undefined,
-) {
-  if (Array.isArray(customer)) {
-    return customer[0]?.name ?? '—';
-  }
-
-  return customer?.name ?? '—';
-}
 
 function BooleanBadge({ value }: { value: boolean }) {
   if (value) {
@@ -47,69 +26,33 @@ function ActiveStatusBadge({ isActive }: { isActive: boolean }) {
   );
 }
 
-export async function AlertContactsPanel({ selectedCustomerId }: AlertContactsPanelProps) {
-  const supabase = await createClient();
-
-  let query = supabase
-    .from('customer_alert_contacts')
-    .select('id, email, name, receives_info, receives_warn, receives_crit, is_active, customer:customers(name)')
-    .order('created_at', { ascending: false });
-
-  if (selectedCustomerId) {
-    query = query.eq('customer_id', selectedCustomerId);
-  }
-
-  const { data: contacts, error } = await query;
-
-  if (error) {
-    return (
-      <div className="space-y-3">
-        <h3 className="section-title">Contatos de alerta</h3>
-        <EmptyState
-          title="Erro ao carregar contatos"
-          description="Não foi possível carregar os contatos de alerta no momento. Tente novamente em alguns instantes."
-        />
-      </div>
-    );
-  }
-
-  const rows: AlertContactRow[] = (contacts ?? []).map((contact) => ({
-    id: contact.id,
-    customer: getCustomerName(contact.customer),
-    email: contact.email,
-    name: contact.name?.trim() || '—',
-    receivesInfo: contact.receives_info,
-    receivesWarn: contact.receives_warn,
-    receivesCrit: contact.receives_crit,
-    isActive: contact.is_active,
-  }));
-
+export function AlertContactsPanel({ contacts }: AlertContactsPanelProps) {
   return (
     <div className="space-y-3">
       <h3 className="section-title">Contatos de alerta</h3>
-      {rows.length === 0 ? (
+      {contacts.length === 0 ? (
         <EmptyState
           title="Nenhum contato de alerta cadastrado"
           description="Os contatos configurados para receber notificações de clientes aparecerão aqui."
         />
       ) : (
         <DataTable columns={['Cliente', 'Nome', 'E-mail', 'Recebe informativos', 'Recebe alertas', 'Recebe alertas críticos', 'Status']}>
-          {rows.map((row) => (
-            <tr key={row.id} className="text-slate-700">
-              <td className="px-4 py-3 font-medium">{row.customer}</td>
-              <td className="px-4 py-3">{row.name}</td>
-              <td className="px-4 py-3">{row.email}</td>
+          {contacts.map((contact) => (
+            <tr key={contact.id} className="text-slate-700">
+              <td className="px-4 py-3 font-medium">{contact.customerName}</td>
+              <td className="px-4 py-3">{contact.name?.trim() || '—'}</td>
+              <td className="px-4 py-3">{contact.email}</td>
               <td className="px-4 py-3">
-                <BooleanBadge value={row.receivesInfo} />
+                <BooleanBadge value={contact.receivesInfo} />
               </td>
               <td className="px-4 py-3">
-                <BooleanBadge value={row.receivesWarn} />
+                <BooleanBadge value={contact.receivesWarn} />
               </td>
               <td className="px-4 py-3">
-                <BooleanBadge value={row.receivesCrit} />
+                <BooleanBadge value={contact.receivesCrit} />
               </td>
               <td className="px-4 py-3">
-                <ActiveStatusBadge isActive={row.isActive} />
+                <ActiveStatusBadge isActive={contact.isActive} />
               </td>
             </tr>
           ))}
