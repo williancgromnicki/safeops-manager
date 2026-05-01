@@ -4,25 +4,24 @@ import { DataTable } from '@/components/DataTable';
 import { EmptyState } from '@/components/EmptyState';
 import { LoadingState } from '@/components/LoadingState';
 import { AlertContactsPanel } from '@/components/AlertContactsPanel';
-import { getCurrentUser } from '@/lib/auth/getCurrentUser';
 import { DEMO_CUSTOMERS } from '@/lib/demo-data';
 import { listAlertContactsService } from '@/lib/services/alert-contacts';
-import { createClient } from '@/lib/supabase/server';
+import { listAllowedCustomersForAdminService } from '@/lib/services/admin';
 
 export default async function AdminPage() {
-  const user = await getCurrentUser();
+  let customers = [] as Awaited<ReturnType<typeof listAllowedCustomersForAdminService>>;
 
-  if (!user) {
-    redirect('/login');
+  try {
+    customers = await listAllowedCustomersForAdminService();
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('Unauthorized')) {
+      redirect('/login');
+    }
+
+    throw error;
   }
 
-  const supabase = await createClient();
-  const { data: customers } = await supabase
-    .from('customers')
-    .select('id, name, created_at')
-    .order('created_at', { ascending: false });
-
-  const rows = customers && customers.length > 0
+  const rows = customers.length > 0
     ? customers.map((customer) => ({ id: customer.id, name: customer.name, source: 'Banco de dados' }))
     : DEMO_CUSTOMERS.map((customer) => ({ id: customer.id, name: customer.name, source: 'Demo fallback' }));
 
