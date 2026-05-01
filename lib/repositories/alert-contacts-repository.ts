@@ -32,6 +32,7 @@ type UpsertAlertContactInput = {
   receivesInfo: boolean;
   receivesWarn: boolean;
   receivesCrit: boolean;
+  isActive?: boolean;
 };
 
 function getCustomerName(
@@ -118,7 +119,7 @@ export async function createAlertContact(
       receives_info: input.receivesInfo,
       receives_warn: input.receivesWarn,
       receives_crit: input.receivesCrit,
-      is_active: true,
+      is_active: input.isActive ?? true,
     })
     .select('id, customer_id')
     .single();
@@ -147,6 +148,7 @@ export async function updateAlertContact(
       receives_info: input.receivesInfo,
       receives_warn: input.receivesWarn,
       receives_crit: input.receivesCrit,
+      is_active: input.isActive,
     })
     .eq('id', input.id)
     .eq('customer_id', input.customerId);
