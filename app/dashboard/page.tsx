@@ -8,11 +8,24 @@ import { getCurrentCustomer } from '@/lib/data/get-current-customer';
 import { getDevices } from '@/lib/data/get-devices';
 import { DEMO_ALERTS, DEMO_CUSTOMERS, DEMO_DASHBOARD_METRICS, DEMO_DEVICES } from '@/lib/demo-data';
 
+function isAlertOpen(alert: AlertItem) {
+  const status =
+    'status' in alert && typeof alert.status === 'string'
+      ? alert.status.toLowerCase()
+      : null;
+
+  if (!status) return true;
+
+  return status !== 'closed';
+}
+
 function getOverallStatus(devices: Awaited<ReturnType<typeof getDevices>>, alerts: AlertItem[]) {
-  const hasCritical = alerts.some((a) => a.severity === 'CRIT') || devices.some((d) => d.status === 'offline');
+  const openAlerts = alerts.filter(isAlertOpen);
+
+  const hasCritical = openAlerts.some((a) => a.severity === 'CRIT') || devices.some((d) => d.status === 'offline');
   if (hasCritical) return 'Crítico';
 
-  const hasWarning = alerts.some((a) => a.severity === 'WARN') || devices.some((d) => d.status === 'attention');
+  const hasWarning = openAlerts.some((a) => a.severity === 'WARN') || devices.some((d) => d.status === 'attention');
   if (hasWarning) return 'Atenção';
 
   return 'Saudável';
@@ -37,17 +50,8 @@ export default async function DashboardPage() {
   const offline = devices.filter((device) => device.status === 'offline').length;
   const online = devices.filter((device) => device.status === 'online').length;
   const attention = devices.filter((device) => device.status === 'attention').length;
-  const activeAlerts = alerts.filter((alert) => {
-  const status =
-    'status' in alert && typeof alert.status === 'string'
-      ? alert.status.toLowerCase()
-      : null;
-
-  if (!status) return true;
-
-  return status !== 'closed' && status !== 'resolved';
-}).length;
-  const criticalAlerts = alerts.filter((alert) => alert.severity === 'CRIT').length;
+  const activeAlerts = alerts.filter(isAlertOpen).length;
+  const criticalAlerts = alerts.filter((alert) => isAlertOpen(alert) && alert.severity === 'CRIT').length;
 
   const metrics = hasRealData
     ? {
