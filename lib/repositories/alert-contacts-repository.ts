@@ -58,11 +58,17 @@ function mapRow(contact: AlertContactRow): AlertContactRecord {
   };
 }
 
-async function fetchAlertContact(id: string, customerId: string): Promise<AlertContactRecord> {
+async function fetchAlertContact(
+  id: string,
+  customerId: string,
+): Promise<AlertContactRecord> {
   const supabase = getSupabaseAdmin();
+
   const { data, error } = await supabase
     .from('customer_alert_contacts')
-    .select('id, customer_id, email, name, receives_info, receives_warn, receives_crit, is_active, customer:customers(name)')
+    .select(
+      'id, customer_id, email, name, receives_info, receives_warn, receives_crit, is_active, customer:customers(name)',
+    )
     .eq('id', id)
     .eq('customer_id', customerId)
     .single();
@@ -74,12 +80,20 @@ async function fetchAlertContact(id: string, customerId: string): Promise<AlertC
   return mapRow(data as AlertContactRow);
 }
 
-export async function listAlertContacts(customerIds: string[]): Promise<AlertContactRecord[]> {
+export async function listAlertContacts(
+  customerIds: string[],
+): Promise<AlertContactRecord[]> {
+  if (customerIds.length === 0) {
+    return [];
+  }
+
   const supabase = getSupabaseAdmin();
 
   const { data, error } = await supabase
     .from('customer_alert_contacts')
-    .select('id, customer_id, email, name, receives_info, receives_warn, receives_crit, is_active, customer:customers(name)')
+    .select(
+      'id, customer_id, email, name, receives_info, receives_warn, receives_crit, is_active, customer:customers(name)',
+    )
     .in('customer_id', customerIds)
     .order('created_at', { ascending: false });
 
@@ -90,8 +104,11 @@ export async function listAlertContacts(customerIds: string[]): Promise<AlertCon
   return ((data ?? []) as AlertContactRow[]).map(mapRow);
 }
 
-export async function createAlertContact(input: UpsertAlertContactInput): Promise<AlertContactRecord> {
+export async function createAlertContact(
+  input: UpsertAlertContactInput,
+): Promise<AlertContactRecord> {
   const supabase = getSupabaseAdmin();
+
   const { data, error } = await supabase
     .from('customer_alert_contacts')
     .insert({
@@ -113,12 +130,15 @@ export async function createAlertContact(input: UpsertAlertContactInput): Promis
   return fetchAlertContact(data.id as string, data.customer_id as string);
 }
 
-export async function updateAlertContact(input: UpsertAlertContactInput): Promise<AlertContactRecord> {
+export async function updateAlertContact(
+  input: UpsertAlertContactInput,
+): Promise<AlertContactRecord> {
   if (!input.id) {
     throw new Error('Failed to update alert contact: missing id.');
   }
 
   const supabase = getSupabaseAdmin();
+
   const { error } = await supabase
     .from('customer_alert_contacts')
     .update({
@@ -138,8 +158,12 @@ export async function updateAlertContact(input: UpsertAlertContactInput): Promis
   return fetchAlertContact(input.id, input.customerId);
 }
 
-export async function deactivateAlertContact(id: string, customerId: string): Promise<AlertContactRecord> {
+export async function deactivateAlertContact(
+  id: string,
+  customerId: string,
+): Promise<AlertContactRecord> {
   const supabase = getSupabaseAdmin();
+
   const { error } = await supabase
     .from('customer_alert_contacts')
     .update({ is_active: false })
