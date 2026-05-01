@@ -59,7 +59,19 @@ export async function AlertContactsPanel({ selectedCustomerId }: AlertContactsPa
     query = query.eq('customer_id', selectedCustomerId);
   }
 
-  const { data: contacts } = await query;
+  const { data: contacts, error } = await query;
+
+  if (error) {
+    return (
+      <div className="space-y-3">
+        <h3 className="section-title">Contatos de alerta</h3>
+        <EmptyState
+          title="Erro ao carregar contatos"
+          description="Não foi possível carregar os contatos de alerta no momento. Tente novamente em alguns instantes."
+        />
+      </div>
+    );
+  }
 
   const rows: AlertContactRow[] = (contacts ?? []).map((contact) => ({
     id: contact.id,
