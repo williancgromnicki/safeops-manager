@@ -90,10 +90,10 @@ export async function AlertContactsPanel({ selectedCustomerId }: AlertContactsPa
       {rows.length === 0 ? (
         <EmptyState
           title="Nenhum contato de alerta cadastrado"
-          description="Os contatos configurados para receber notificações dos clientes aparecerão aqui."
+          description="Os contatos configurados para receber notificações de clientes aparecerão aqui."
         />
       ) : (
-        <DataTable columns={['Cliente', 'Nome', 'E-mail', 'Recebe INFO', 'Recebe WARN', 'Recebe CRIT', 'Status']}>
+        <DataTable columns={['Cliente', 'Nome', 'E-mail', 'Recebe informativos', 'Recebe alertas', 'Recebe alertas críticos', 'Status']}>
           {rows.map((row) => (
             <tr key={row.id} className="text-slate-700">
               <td className="px-4 py-3 font-medium">{row.customer}</td>
