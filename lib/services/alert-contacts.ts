@@ -9,16 +9,31 @@ export type ListAlertContactsInput = {
   customerId?: string;
 };
 
-export async function listAlertContactsService(
-  input: ListAlertContactsInput = {},
-): Promise<AlertContactRecord[]> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+export type CreateAlertContactInput = {
+  customerId: string;
+  email: string;
+  name?: string | null;
+} & AlertPermissionFlags;
 
-  if (!user) {
-    throw new Error('Unauthorized: user not authenticated.');
+export type UpdateAlertContactInput = {
+  id: string;
+  customerId: string;
+  email: string;
+  name?: string | null;
+} & AlertPermissionFlags;
+
+export type DeactivateAlertContactInput = {
+  id: string;
+  customerId: string;
+};
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function validateEmail(email: string): string {
+  const normalized = email.trim().toLowerCase();
+
+  if (!EMAIL_REGEX.test(normalized)) {
+    throw new Error('Validation error: invalid e-mail format.');
   }
 
   const { data, error: accessError } = await supabase

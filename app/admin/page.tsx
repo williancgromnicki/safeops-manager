@@ -29,7 +29,7 @@ export default async function AdminPage() {
     ? customers.map((customer) => ({ id: customer.id, name: customer.name, source: 'Banco de dados' }))
     : DEMO_CUSTOMERS.map((customer) => ({ id: customer.id, name: customer.name, source: 'Demo fallback' }));
 
-  const alertContacts = await listAlertContactsService();
+  const alertContacts = await listAlertContactsAction();
 
   return (
     <section className="space-y-6">
