@@ -90,7 +90,7 @@ export default async function AdminPage() {
         </DataTable>
       )}
 
-      {isAdmin ? <AlertContactsPanel contacts={alertContacts} /> : null}
+      {isAdmin ? <AlertContactsPanel contacts={alertContacts} customers={customers} canManage={isAdmin} /> : null}
     </section>
   );
 }

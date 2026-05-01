@@ -1,9 +1,12 @@
 import { DataTable } from '@/components/DataTable';
 import { EmptyState } from '@/components/EmptyState';
 import type { AlertContactRecord } from '@/lib/repositories/alert-contacts-repository';
+import type { AdminCustomerRecord } from '@/lib/repositories/admin-repository';
 
 type AlertContactsPanelProps = {
   contacts: AlertContactRecord[];
+  customers: AdminCustomerRecord[];
+  canManage: boolean;
 };
 
 function BooleanBadge({ value }: { value: boolean }) {
