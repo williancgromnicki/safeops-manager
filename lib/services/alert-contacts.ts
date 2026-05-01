@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import {
+  activateAlertContact as activateAlertContactRepository,
   createAlertContact as createAlertContactRepository,
   deactivateAlertContact as deactivateAlertContactRepository,
   listAlertContacts,
@@ -178,4 +179,12 @@ export async function deactivateAlertContact(
   await requireAuthenticatedAdmin(input.customerId);
 
   return deactivateAlertContactRepository(input.id, input.customerId);
+}
+
+export async function activateAlertContact(
+  input: DeactivateAlertContactInput,
+): Promise<AlertContactRecord> {
+  await requireAuthenticatedAdmin(input.customerId);
+
+  return activateAlertContactRepository(input.id, input.customerId);
 }

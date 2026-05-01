@@ -178,3 +178,22 @@ export async function deactivateAlertContact(
 
   return fetchAlertContact(id, customerId);
 }
+
+export async function activateAlertContact(
+  id: string,
+  customerId: string,
+): Promise<AlertContactRecord> {
+  const supabase = getSupabaseAdmin();
+
+  const { error } = await supabase
+    .from('customer_alert_contacts')
+    .update({ is_active: true })
+    .eq('id', id)
+    .eq('customer_id', customerId);
+
+  if (error) {
+    throw new Error(`Failed to activate alert contact: ${error.message}`);
+  }
+
+  return fetchAlertContact(id, customerId);
+}
