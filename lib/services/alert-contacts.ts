@@ -66,8 +66,15 @@ async function requireAdminAndGetAllowedCustomers(userId: string): Promise<strin
     .eq('user_id', userId)
     .maybeSingle<UserProfile>();
 
-  if (profile?.role !== 'admin') {
-    throw new Error('Forbidden: admin role is required.');
+  const isAdmin = profile?.role === 'admin';
+
+  const { data: accessRows, error: accessError } = await supabase
+    .from('user_customer_access')
+    .select('customer_id')
+    .eq('user_id', user.id);
+
+  if (accessError) {
+    throw new Error(`Failed to list customer access: ${accessError.message}`);
   }
 
   const { data: accesses, error } = await supabase
