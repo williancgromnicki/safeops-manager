@@ -63,7 +63,6 @@ function buildUpsertInput(formData: FormData) {
     receivesInfo: getBooleanField(formData, 'receivesInfo'),
     receivesWarn: getBooleanField(formData, 'receivesWarn'),
     receivesCrit: getBooleanField(formData, 'receivesCrit'),
-    isActive: getBooleanField(formData, 'isActive'),
   };
 }
 

@@ -34,7 +34,6 @@ export type UpdateAlertContactInput = {
   customerId: string;
   email: string;
   name?: string | null;
-  isActive?: boolean;
 } & AlertPermissionFlags;
 
 export type DeactivateAlertContactInput = {
@@ -149,7 +148,6 @@ export async function createAlertContact(
     receivesInfo: input.receivesInfo,
     receivesWarn: input.receivesWarn,
     receivesCrit: input.receivesCrit,
-    isActive: input.isActive,
   });
 }
 
@@ -169,7 +167,6 @@ export async function updateAlertContact(
     receivesInfo: input.receivesInfo,
     receivesWarn: input.receivesWarn,
     receivesCrit: input.receivesCrit,
-    isActive: input.isActive,
   });
 }
 
