@@ -1,11 +1,16 @@
 import { createClient } from '@/lib/supabase/server';
 import {
   listAlertContactsByCustomer,
+  listAlertContactsByCustomers,
   type AlertContactRecord,
 } from '@/lib/repositories/alert-contacts-repository';
 
 type UserProfile = {
   role: string | null;
+};
+
+type UserCustomerAccess = {
+  customer_id: string;
 };
 
 export type ListAlertContactsInput = {
@@ -27,25 +32,33 @@ export async function listAlertContactsService(
   const { data: profile } = await supabase
     .from('profiles')
     .select('role')
-    .eq('user_id', user.id)
+    .eq('id', user.id)
     .maybeSingle<UserProfile>();
 
-  if (profile?.role !== 'admin') {
-    throw new Error('Forbidden: admin role is required.');
+  const isAdmin = profile?.role === 'admin';
+
+  const { data: accessRows, error: accessError } = await supabase
+    .from('user_customer_access')
+    .select('customer_id')
+    .eq('user_id', user.id);
+
+  if (accessError) {
+    throw new Error(`Failed to list customer access: ${accessError.message}`);
   }
+
+  const customerIds = (accessRows as UserCustomerAccess[] | null)?.map((row) => row.customer_id) ?? [];
 
   if (input.customerId) {
-    const { data: access } = await supabase
-      .from('user_customer_access')
-      .select('id')
-      .eq('user_id', user.id)
-      .eq('customer_id', input.customerId)
-      .maybeSingle();
-
-    if (!access) {
-      throw new Error('Forbidden: no access to this customer.');
+    if (!isAdmin && !customerIds.includes(input.customerId)) {
+      return [];
     }
+
+    if (isAdmin && customerIds.length > 0 && !customerIds.includes(input.customerId)) {
+      return [];
+    }
+
+    return listAlertContactsByCustomer(input.customerId);
   }
 
-  return listAlertContactsByCustomer(input.customerId);
+  return listAlertContactsByCustomers(customerIds);
 }

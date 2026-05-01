@@ -66,3 +66,35 @@ export async function listAlertContactsByCustomer(customerId?: string): Promise<
     isActive: contact.is_active,
   }));
 }
+
+
+export async function listAlertContactsByCustomers(customerIds: string[]): Promise<AlertContactRecord[]> {
+  if (customerIds.length === 0) {
+    return [];
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('customer_alert_contacts')
+    .select('id, customer_id, email, name, receives_info, receives_warn, receives_crit, is_active, customer:customers(name)')
+    .in('customer_id', customerIds)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    throw new Error(`Failed to list alert contacts: ${error.message}`);
+  }
+
+  const rows = (data ?? []) as AlertContactRow[];
+
+  return rows.map((contact) => ({
+    id: contact.id,
+    customerId: contact.customer_id,
+    customerName: getCustomerName(contact.customer),
+    email: contact.email,
+    name: contact.name,
+    receivesInfo: contact.receives_info,
+    receivesWarn: contact.receives_warn,
+    receivesCrit: contact.receives_crit,
+    isActive: contact.is_active,
+  }));
+}
