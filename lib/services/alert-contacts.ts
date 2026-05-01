@@ -34,9 +34,15 @@ export type UpdateAlertContactInput = {
   customerId: string;
   email: string;
   name?: string | null;
+  isActive?: boolean;
 } & AlertPermissionFlags;
 
 export type DeactivateAlertContactInput = {
+  id: string;
+  customerId: string;
+};
+
+export type ActivateAlertContactInput = {
   id: string;
   customerId: string;
 };
@@ -159,7 +165,7 @@ export async function updateAlertContact(
   const email = validateEmail(input.email);
   validatePermissions(input);
 
-  return updateAlertContactRepository({
+  const updatedContact = await updateAlertContactRepository({
     id: input.id,
     customerId: input.customerId,
     email,
@@ -168,6 +174,16 @@ export async function updateAlertContact(
     receivesWarn: input.receivesWarn,
     receivesCrit: input.receivesCrit,
   });
+
+  if (typeof input.isActive !== 'boolean' || updatedContact.isActive === input.isActive) {
+    return updatedContact;
+  }
+
+  if (input.isActive) {
+    return activateAlertContactRepository(input.id, input.customerId);
+  }
+
+  return deactivateAlertContactRepository(input.id, input.customerId);
 }
 
 export async function deactivateAlertContact(
@@ -179,7 +195,7 @@ export async function deactivateAlertContact(
 }
 
 export async function activateAlertContact(
-  input: DeactivateAlertContactInput,
+  input: ActivateAlertContactInput,
 ): Promise<AlertContactRecord> {
   await requireAuthenticatedAdmin(input.customerId);
 
