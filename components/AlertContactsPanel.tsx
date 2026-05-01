@@ -1,7 +1,11 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { createAlertContactAction, deactivateAlertContactAction, updateAlertContactAction } from '@/app/admin/actions/alert-contacts';
+import {
+  createAlertContactAction,
+  toggleAlertContactAction,
+  updateAlertContactAction,
+} from '@/app/admin/actions/alert-contacts';
 import { DataTable } from '@/components/DataTable';
 import { EmptyState } from '@/components/EmptyState';
 import type { AlertContactRecord } from '@/lib/repositories/alert-contacts-repository';
@@ -80,6 +84,20 @@ export function AlertContactsPanel({ contacts, customers, canManage }: AlertCont
     });
   };
 
+  const toFormData = (data: Record<string, string | boolean | null | undefined>) => {
+    const formData = new FormData();
+
+    for (const [key, value] of Object.entries(data)) {
+      if (value === null || value === undefined) {
+        continue;
+      }
+
+      formData.set(key, typeof value === 'boolean' ? String(value) : value);
+    }
+
+    return formData;
+  };
+
   const submitForm = () => {
     setMessage(null);
     if (!formState.email.trim()) {
@@ -94,10 +112,16 @@ export function AlertContactsPanel({ contacts, customers, canManage }: AlertCont
     startTransition(async () => {
       try {
         if (editingContact) {
-          await updateAlertContactAction({ id: editingContact.id, ...formState, name: formState.name || null });
+          const formData = toFormData({
+            id: editingContact.id,
+            ...formState,
+            name: formState.name || null,
+          });
+          await updateAlertContactAction(formData);
           setMessage({ type: 'success', text: 'Contato atualizado com sucesso.' });
         } else {
-          await createAlertContactAction({ ...formState, name: formState.name || null });
+          const formData = toFormData({ ...formState, name: formState.name || null });
+          await createAlertContactAction(formData);
           setMessage({ type: 'success', text: 'Contato criado com sucesso.' });
         }
         resetForm();
@@ -112,10 +136,15 @@ export function AlertContactsPanel({ contacts, customers, canManage }: AlertCont
     startTransition(async () => {
       try {
         if (contact.isActive) {
-          await deactivateAlertContactAction({ id: contact.id, customerId: contact.customerId });
+          const formData = toFormData({
+            id: contact.id,
+            customerId: contact.customerId,
+            isActive: contact.isActive,
+          });
+          await toggleAlertContactAction(formData);
           setMessage({ type: 'success', text: 'Contato desativado com sucesso.' });
         } else {
-          await updateAlertContactAction({
+          const formData = toFormData({
             id: contact.id,
             customerId: contact.customerId,
             name: contact.name,
@@ -123,8 +152,9 @@ export function AlertContactsPanel({ contacts, customers, canManage }: AlertCont
             receivesInfo: contact.receivesInfo,
             receivesWarn: contact.receivesWarn,
             receivesCrit: contact.receivesCrit,
-            isActive: true,
+            isActive: contact.isActive,
           });
+          await toggleAlertContactAction(formData);
           setMessage({ type: 'success', text: 'Contato ativado com sucesso.' });
         }
       } catch (error) {
