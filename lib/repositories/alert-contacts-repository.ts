@@ -24,7 +24,7 @@ type AlertContactRow = {
   customer: { name: string | null } | { name: string | null }[] | null;
 };
 
-type CreateAlertContactInput = {
+type UpsertAlertContactInput = {
   id?: string;
   customerId: string;
   email: string;
@@ -106,7 +106,7 @@ export async function listAlertContacts(
 }
 
 export async function createAlertContact(
-  input: CreateAlertContactInput,
+  input: UpsertAlertContactInput,
 ): Promise<AlertContactRecord> {
   const supabase = getSupabaseAdmin();
 
@@ -131,19 +131,8 @@ export async function createAlertContact(
   return fetchAlertContact(data.id as string, data.customer_id as string);
 }
 
-type UpdateAlertContactInput = {
-  id: string;
-  customerId: string;
-  email: string;
-  name: string | null;
-  receivesInfo: boolean;
-  receivesWarn: boolean;
-  receivesCrit: boolean;
-  isActive?: boolean;
-};
-
 export async function updateAlertContact(
-  input: UpdateAlertContactInput,
+  input: UpsertAlertContactInput,
 ): Promise<AlertContactRecord> {
   if (!input.id) {
     throw new Error('Failed to update alert contact: missing id.');
@@ -154,15 +143,15 @@ export async function updateAlertContact(
   const { error } = await supabase
     .from('customer_alert_contacts')
     .update({
-  email: input.email,
-  name: input.name,
-  receives_info: input.receivesInfo,
-  receives_warn: input.receivesWarn,
-  receives_crit: input.receivesCrit,
-  ...(typeof input.isActive === 'boolean'
-    ? { is_active: input.isActive }
-    : {}),
-})
+      email: input.email,
+      name: input.name,
+      receives_info: input.receivesInfo,
+      receives_warn: input.receivesWarn,
+      receives_crit: input.receivesCrit,
+      ...(typeof input.isActive === 'boolean'
+        ? { is_active: input.isActive }
+        : {}),
+    })
     .eq('id', input.id)
     .eq('customer_id', input.customerId);
 
@@ -245,7 +234,8 @@ export async function deleteAlertContacts(
     .in(
       'id',
       contactsToDelete.map((contact) => contact.id),
-    );
+    )
+    .in('customer_id', customerIds);
 
   if (deleteError) {
     throw new Error(`Failed to delete alert contacts: ${deleteError.message}`);
