@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-
+export const dynamic = 'force-dynamic';
 import { EmptyState } from '@/components/EmptyState';
 import { StatCard } from '@/components/StatCard';
 import { StatusBadge } from '@/components/StatusBadge';
