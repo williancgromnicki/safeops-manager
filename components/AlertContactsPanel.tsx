@@ -5,6 +5,7 @@ import { useEffect, useState, useTransition } from 'react';
 
 import {
   createAlertContactAction,
+  deleteAlertContactsAction,
   toggleAlertContactAction,
   updateAlertContactAction,
 } from '@/app/admin/actions/alert-contacts';
@@ -104,6 +105,8 @@ export function AlertContactsPanel({
   const [editingContact, setEditingContact] =
     useState<AlertContactRecord | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
 
   const [formState, setFormState] = useState<FormState>({
     customerId: customers[0]?.id ?? '',
@@ -125,6 +128,63 @@ export function AlertContactsPanel({
     setEditingContact(null);
     setFormState({ customerId: customers[0]?.id ?? '', ...DEFAULT_FORM });
     setIsFormOpen(true);
+  };
+
+  const toggleContactSelection = (contactId: string) => {
+    setSelectedContactIds((current) =>
+      current.includes(contactId)
+        ? current.filter((id) => id !== contactId)
+        : [...current, contactId],
+    );
+  };
+
+  const deleteSelectedContacts = () => {
+    if (selectedContactIds.length === 0) {
+      return;
+    }
+
+    const shouldDelete = window.confirm(
+      selectedContactIds.length > 1
+        ? 'Deseja deletar os contatos selecionados?'
+        : 'Deseja deletar o contato selecionado?',
+    );
+
+    if (!shouldDelete) {
+      return;
+    }
+
+    setMessage(null);
+
+    startTransition(async () => {
+      try {
+        const formData = new FormData();
+
+        selectedContactIds.forEach((id) => formData.append('ids', id));
+        const result = await deleteAlertContactsAction(formData);
+        if (!result.success) {
+          throw new Error(result.message);
+        }
+
+        setSelectedContactIds([]);
+        setIsMenuOpen(false);
+        setMessage({
+          type: 'success',
+          text:
+            selectedContactIds.length > 1
+              ? 'Contatos deletados com sucesso.'
+              : 'Contato deletado com sucesso.',
+        });
+        router.refresh();
+      } catch (error) {
+        setMessage({
+          type: 'error',
+          text:
+            error instanceof Error
+              ? `Erro ao deletar contato: ${error.message}`
+              : 'Erro ao deletar contato.',
+        });
+      }
+    });
   };
 
   const openEdit = (contact: AlertContactRecord) => {
@@ -331,14 +391,39 @@ export function AlertContactsPanel({
         <h3 className="section-title">Contatos de alerta</h3>
 
         {canManage ? (
-          <button
-            type="button"
-            onClick={openCreate}
-            disabled={isPending}
-            className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
-          >
-            Adicionar contato
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => setIsMenuOpen((current) => !current)}
+                className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50"
+                aria-label="Ações em lote"
+              >
+                ...
+              </button>
+              {isMenuOpen ? (
+                <div className="absolute right-0 top-11 z-10 min-w-[190px] rounded-md border border-slate-200 bg-white p-1 shadow-lg">
+                  <button
+                    type="button"
+                    disabled={isPending || selectedContactIds.length === 0}
+                    onClick={deleteSelectedContacts}
+                    className="w-full rounded px-3 py-2 text-left text-sm text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Deletar selecionados
+                  </button>
+                </div>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={openCreate}
+              disabled={isPending}
+              className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+            >
+              Adicionar contato
+            </button>
+          </div>
         ) : null}
       </div>
 
@@ -468,6 +553,7 @@ export function AlertContactsPanel({
       ) : (
         <DataTable
           columns={[
+            '',
             'Cliente',
             'Nome',
             'E-mail',
@@ -480,6 +566,16 @@ export function AlertContactsPanel({
         >
           {contactsState.map((contact) => (
             <tr key={contact.id} className="text-slate-700">
+              <td className="px-4 py-3">
+                {canManage ? (
+                  <input
+                    type="checkbox"
+                    disabled={isPending}
+                    checked={selectedContactIds.includes(contact.id)}
+                    onChange={() => toggleContactSelection(contact.id)}
+                  />
+                ) : null}
+              </td>
               <td className="px-4 py-3 font-medium">
                 {contact.customerName}
               </td>

@@ -8,7 +8,8 @@ type WriteAuditLogInput = {
     | 'alert_contact_created'
     | 'alert_contact_updated'
     | 'alert_contact_enabled'
-    | 'alert_contact_disabled';
+    | 'alert_contact_disabled'
+    | 'alert_contact_deleted';
   context?: Record<string, unknown>;
 };
 

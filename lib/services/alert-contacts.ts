@@ -3,6 +3,7 @@ import {
   activateAlertContact as activateAlertContactRepository,
   createAlertContact as createAlertContactRepository,
   deactivateAlertContact as deactivateAlertContactRepository,
+  deleteAlertContacts as deleteAlertContactsRepository,
   listAlertContacts,
   updateAlertContact as updateAlertContactRepository,
   type AlertContactRecord,
@@ -47,12 +48,16 @@ export type ActivateAlertContactInput = {
   id: string;
   customerId: string;
 };
+export type DeleteAlertContactsInput = {
+  ids: string[];
+};
 
 type AuditAction =
   | 'alert_contact_created'
   | 'alert_contact_updated'
   | 'alert_contact_enabled'
-  | 'alert_contact_disabled';
+  | 'alert_contact_disabled'
+  | 'alert_contact_deleted';
 
 type AuditContext = Record<string, unknown>;
 
@@ -280,4 +285,33 @@ export async function activateAlertContact(
   });
 
   return activatedContact;
+}
+
+export async function deleteAlertContacts(
+  input: DeleteAlertContactsInput,
+): Promise<number> {
+  const { userId, allowedCustomerIds } = await requireAuthenticatedAdmin();
+
+  const sanitizedIds = Array.from(
+    new Set(input.ids.map((id) => id.trim()).filter(Boolean)),
+  );
+
+  const deletedContacts = await deleteAlertContactsRepository(
+    sanitizedIds,
+    allowedCustomerIds,
+  );
+
+  await Promise.all(
+    deletedContacts.map((contact) =>
+      writeAuditLogSafely({
+        userId,
+        customerId: contact.customerId,
+        contactId: contact.id,
+        action: 'alert_contact_deleted',
+        context: contactAuditContext(contact, { source: 'bulk_delete' }),
+      }),
+    ),
+  );
+
+  return deletedContacts.length;
 }

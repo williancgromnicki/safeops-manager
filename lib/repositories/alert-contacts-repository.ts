@@ -210,3 +210,46 @@ export async function activateAlertContact(
 
   return fetchAlertContact(id, customerId);
 }
+
+export async function deleteAlertContacts(
+  ids: string[],
+  customerIds: string[],
+): Promise<AlertContactRecord[]> {
+  if (ids.length === 0 || customerIds.length === 0) {
+    return [];
+  }
+
+  const supabase = getSupabaseAdmin();
+
+  const { data, error } = await supabase
+    .from('customer_alert_contacts')
+    .select(
+      'id, customer_id, email, name, receives_info, receives_warn, receives_crit, is_active, customer:customers(name)',
+    )
+    .in('id', ids)
+    .in('customer_id', customerIds);
+
+  if (error) {
+    throw new Error(`Failed to list contacts for deletion: ${error.message}`);
+  }
+
+  const contactsToDelete = ((data ?? []) as AlertContactRow[]).map(mapRow);
+
+  if (contactsToDelete.length === 0) {
+    return [];
+  }
+
+  const { error: deleteError } = await supabase
+    .from('customer_alert_contacts')
+    .delete()
+    .in(
+      'id',
+      contactsToDelete.map((contact) => contact.id),
+    );
+
+  if (deleteError) {
+    throw new Error(`Failed to delete alert contacts: ${deleteError.message}`);
+  }
+
+  return contactsToDelete;
+}
