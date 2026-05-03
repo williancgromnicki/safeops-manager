@@ -232,24 +232,23 @@ export function AlertContactsPanel({
 
           const createdContact = await createAlertContactAction(formData);
 
-          if (createdContact) {
-            setContactsState((current) => [
-              {
-                ...createdContact,
-                customerName:
-                  createdContact.customerName ||
-                  selectedCustomer?.name ||
-                  '—',
-              },
-              ...current,
-            ]);
-          }
+if (createdContact) {
+  setContactsState((current) => [
+    {
+      ...createdContact,
+      customerName:
+        createdContact.customerName ||
+        selectedCustomer?.name ||
+        '—',
+    },
+    ...current,
+  ]);
+}
 
-          setMessage({
-            type: 'success',
-            text: 'Contato criado com sucesso.',
-          });
-        }
+setMessage({
+  type: 'success',
+  text: 'Contato criado com sucesso.',
+});
 
         resetForm();
         router.refresh();
