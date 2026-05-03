@@ -6,6 +6,7 @@ import {
   activateAlertContact,
   createAlertContact,
   deactivateAlertContact,
+  deleteAlertContacts,
   listAlertContactsService,
   type ListAlertContactsInput,
   updateAlertContact,
@@ -149,6 +150,37 @@ export async function toggleAlertContactAction(
       message: isActive
         ? 'Contato desativado com sucesso.'
         : 'Contato ativado com sucesso.',
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: toUiErrorMessage(error),
+    };
+  }
+}
+
+export async function deleteAlertContactsAction(
+  formData: FormData,
+): Promise<AlertContactActionState> {
+  try {
+    const ids = formData
+      .getAll('ids')
+      .map((value) => (typeof value === 'string' ? value.trim() : ''))
+      .filter(Boolean);
+
+    if (ids.length === 0) {
+      throw new Error('Selecione ao menos um contato para deletar.');
+    }
+
+    const totalDeleted = await deleteAlertContacts({ ids });
+    revalidatePath('/admin');
+
+    return {
+      success: true,
+      message:
+        totalDeleted > 1
+          ? 'Contatos deletados com sucesso.'
+          : 'Contato deletado com sucesso.',
     };
   } catch (error) {
     return {
