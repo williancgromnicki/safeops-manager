@@ -98,10 +98,9 @@ export async function getAllowedCustomers(): Promise<{
     throw new Error(`Failed to list allowed customers: ${error.message}`);
   }
 
-  const customers =
-    ((data ?? []) as UserCustomerAccessRow[])
-      .map(mapAllowedCustomer)
-      .filter((customer): customer is AllowedCustomer => Boolean(customer));
+  const customers = ((data ?? []) as UserCustomerAccessRow[])
+    .map(mapAllowedCustomer)
+    .filter((customer): customer is AllowedCustomer => Boolean(customer));
 
   return {
     userId: user.id,
