@@ -154,12 +154,15 @@ export async function updateAlertContact(
   const { error } = await supabase
     .from('customer_alert_contacts')
     .update({
-      email: input.email,
-      name: input.name,
-      receives_info: input.receivesInfo,
-      receives_warn: input.receivesWarn,
-      receives_crit: input.receivesCrit,
-    })
+  email: input.email,
+  name: input.name,
+  receives_info: input.receivesInfo,
+  receives_warn: input.receivesWarn,
+  receives_crit: input.receivesCrit,
+  ...(typeof input.isActive === 'boolean'
+    ? { is_active: input.isActive }
+    : {}),
+})
     .eq('id', input.id)
     .eq('customer_id', input.customerId);
 
