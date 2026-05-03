@@ -104,6 +104,7 @@ export function AlertContactsPanel({
   const [editingContact, setEditingContact] =
     useState<AlertContactRecord | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
+
   const [formState, setFormState] = useState<FormState>({
     customerId: customers[0]?.id ?? '',
     ...DEFAULT_FORM,
@@ -130,6 +131,7 @@ export function AlertContactsPanel({
     setMessage(null);
     setEditingContact(contact);
     setIsFormOpen(true);
+
     setFormState({
       customerId: contact.customerId,
       name: contact.name ?? '',
@@ -216,10 +218,6 @@ export function AlertContactsPanel({
             text: 'Contato atualizado com sucesso.',
           });
         } else {
-          const selectedCustomer = customers.find(
-            (customer) => customer.id === formState.customerId,
-          );
-
           const formData = toFormData({
             customerId: formState.customerId,
             name: formState.name || null,
@@ -230,19 +228,13 @@ export function AlertContactsPanel({
             isActive: formState.isActive,
           });
 
-          const result = await createAlertContactAction(formData);
+          await createAlertContactAction(formData);
 
-if (result && 'success' in result && result.success === false) {
-  throw new Error(result.message || 'Não foi possível criar o contato.');
-}
-
-setMessage({
-  type: 'success',
-  text:
-    result && 'message' in result && result.message
-      ? result.message
-      : 'Contato criado com sucesso.',
-});
+          setMessage({
+            type: 'success',
+            text: 'Contato criado com sucesso.',
+          });
+        }
 
         resetForm();
         router.refresh();
@@ -254,8 +246,9 @@ setMessage({
               ? `Erro ao salvar contato: ${error.message}`
               : 'Erro ao salvar contato.',
         });
-      
-    };
+      }
+    });
+  };
 
   const toggleStatus = (contact: AlertContactRecord) => {
     setMessage(null);
@@ -490,9 +483,7 @@ setMessage({
               <td className="px-4 py-3 font-medium">
                 {contact.customerName}
               </td>
-              <td className="px-4 py-3">
-                {contact.name?.trim() || '—'}
-              </td>
+              <td className="px-4 py-3">{contact.name?.trim() || '—'}</td>
               <td className="px-4 py-3">{contact.email}</td>
               <td className="px-4 py-3">
                 <BooleanBadge value={contact.receivesInfo} />
