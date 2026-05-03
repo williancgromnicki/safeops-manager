@@ -68,8 +68,12 @@ export default async function DevicesPage({ searchParams }: DevicesPageProps) {
     );
   }
 
-  const devices: DemoDevice[] = await getDevices(activeCustomer.customerId);
-  const list = devices.length > 0 ? devices : DEMO_DEVICES;
+  const isDemoCustomer = activeCustomer.customerSlug === 'safesys-demo';
+
+  const realDevices: DemoDevice[] = await getDevices(activeCustomer.customerId);
+  const list = isDemoCustomer && realDevices.length === 0
+    ? DEMO_DEVICES
+    : realDevices;
 
   return (
     <section className="space-y-6">
@@ -85,7 +89,7 @@ export default async function DevicesPage({ searchParams }: DevicesPageProps) {
       {list.length === 0 ? (
         <EmptyState
           title="Nenhum dispositivo registrado"
-          description="Quando dispositivos forem cadastrados ou sincronizados, eles aparecerão nesta listagem."
+          description="Quando dispositivos forem cadastrados ou sincronizados para este cliente, eles aparecerão nesta listagem."
         />
       ) : (
         <DataTable
