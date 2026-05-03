@@ -131,37 +131,82 @@ export function AlertContactsPanel({ contacts, customers, canManage }: AlertCont
     });
   };
 
-  const toggleStatus = (contact: AlertContactRecord) => {
-    setMessage(null);
-    startTransition(async () => {
-      try {
-        if (contact.isActive) {
-          const formData = toFormData({
-            id: contact.id,
-            customerId: contact.customerId,
-            isActive: contact.isActive,
-          });
-          await toggleAlertContactAction(formData);
-          setMessage({ type: 'success', text: 'Contato desativado com sucesso.' });
-        } else {
-          const formData = toFormData({
-            id: contact.id,
-            customerId: contact.customerId,
-            name: contact.name,
-            email: contact.email,
-            receivesInfo: contact.receivesInfo,
-            receivesWarn: contact.receivesWarn,
-            receivesCrit: contact.receivesCrit,
-            isActive: contact.isActive,
-          });
-          await toggleAlertContactAction(formData);
-          setMessage({ type: 'success', text: 'Contato ativado com sucesso.' });
-        }
-      } catch (error) {
-        setMessage({ type: 'error', text: error instanceof Error ? `Erro ao alterar status: ${error.message}` : 'Erro ao alterar status.' });
-      }
+const toggleStatus = (contact: AlertContactRecord) => {
+  setMessage(null);
+
+  const nextIsActive = !contact.isActive;
+  const previousContacts = contactsState;
+
+  // Atualização otimista: muda a tela imediatamente
+  setContactsState((current) =>
+    current.map((item) =>
+      item.id === contact.id
+        ? {
+            ...item,
+            isActive: nextIsActive,
+          }
+        : item,
+    ),
+  );
+
+  if (editingContact?.id === contact.id) {
+    setEditingContact({
+      ...editingContact,
+      isActive: nextIsActive,
     });
-  };
+
+    setFormState((current) => ({
+      ...current,
+      isActive: nextIsActive,
+    }));
+  }
+
+  startTransition(async () => {
+    try {
+      const formData = toFormData({
+        id: contact.id,
+        customerId: contact.customerId,
+        name: contact.name,
+        email: contact.email,
+        receivesInfo: contact.receivesInfo,
+        receivesWarn: contact.receivesWarn,
+        receivesCrit: contact.receivesCrit,
+        isActive: contact.isActive,
+      });
+
+      await toggleAlertContactAction(formData);
+
+      setMessage({
+        type: 'success',
+        text: nextIsActive
+          ? 'Contato ativado com sucesso.'
+          : 'Contato desativado com sucesso.',
+      });
+
+      router.refresh();
+    } catch (error) {
+      // Rollback se a ação falhar no servidor
+      setContactsState(previousContacts);
+
+      if (editingContact?.id === contact.id) {
+        setEditingContact(contact);
+
+        setFormState((current) => ({
+          ...current,
+          isActive: contact.isActive,
+        }));
+      }
+
+      setMessage({
+        type: 'error',
+        text:
+          error instanceof Error
+            ? `Erro ao alterar status: ${error.message}`
+            : 'Erro ao alterar status.',
+      });
+    }
+  });
+};
 
   return (
     <div className="space-y-3">
