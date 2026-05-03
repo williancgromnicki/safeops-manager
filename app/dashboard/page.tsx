@@ -1,6 +1,5 @@
 import { redirect } from 'next/navigation';
 
-import { CustomerSelector } from '@/components/CustomerSelector';
 import { EmptyState } from '@/components/EmptyState';
 import { StatCard } from '@/components/StatCard';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -114,18 +113,11 @@ export default async function DashboardPage({
 
   return (
     <section className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <h2 className="section-title">Dashboard - {customerName}</h2>
-          <p className="mt-2 text-sm text-slate-600">
-            Visão operacional consolidada do cliente selecionado.
-          </p>
-        </div>
-
-        <CustomerSelector
-          customers={customerContext.customers}
-          activeCustomerId={activeCustomer.customerId}
-        />
+      <div>
+        <h2 className="section-title">Dashboard - {customerName}</h2>
+        <p className="mt-2 text-sm text-slate-600">
+          Visão operacional consolidada do cliente selecionado.
+        </p>
       </div>
 
       {!hasRealData && metrics.activeDevices === 0 ? (
