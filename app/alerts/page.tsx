@@ -1,31 +1,70 @@
 import { redirect } from 'next/navigation';
-export const dynamic = 'force-dynamic';
+
 import { DataTable } from '@/components/DataTable';
 import { EmptyState } from '@/components/EmptyState';
 import { SeverityBadge } from '@/components/SeverityBadge';
 import { getAlerts, type AlertItem } from '@/lib/data/get-alerts';
-import { getCurrentCustomer } from '@/lib/data/get-current-customer';
+import { resolveCurrentCustomer } from '@/lib/data/get-current-customer';
 import { DEMO_ALERTS } from '@/lib/demo-data';
+
+export const dynamic = 'force-dynamic';
+
+type AlertsPageProps = {
+  searchParams?: Promise<{
+    customerId?: string;
+  }>;
+};
 
 function translateStatus(status?: string | null): string {
   return status?.toLowerCase() === 'closed' ? 'Fechado' : 'Aberto';
 }
 
-export default async function AlertsPage() {
-  const customer = await getCurrentCustomer();
+export default async function AlertsPage({ searchParams }: AlertsPageProps) {
+  const params = searchParams ? await searchParams : {};
+  const customerContext = await resolveCurrentCustomer(params.customerId);
 
-  if (!customer) {
+  if (!customerContext) {
     redirect('/login');
   }
 
-  const alerts = customer ? await getAlerts(customer.customerId) : [];
-  const list: AlertItem[] = alerts.length > 0
-    ? alerts
-    : DEMO_ALERTS.map((alert) => ({ ...alert, status: 'open', occurrenceCount: 1, lastSeenAt: null }));
+  const activeCustomer = customerContext.activeCustomer;
+
+  if (!activeCustomer) {
+    return (
+      <section className="space-y-6">
+        <h2 className="section-title">Alertas</h2>
+
+        <EmptyState
+          title="Nenhum cliente vinculado"
+          description="Seu usuário ainda não possui clientes vinculados para exibição de alertas."
+        />
+      </section>
+    );
+  }
+
+  const alerts = await getAlerts(activeCustomer.customerId);
+
+  const list: AlertItem[] =
+    alerts.length > 0
+      ? alerts
+      : DEMO_ALERTS.map((alert) => ({
+          ...alert,
+          status: 'open',
+          occurrenceCount: 1,
+          lastSeenAt: null,
+        }));
 
   return (
     <section className="space-y-6">
-      <h2 className="section-title">Alertas</h2>
+      <div>
+        <h2 className="section-title">
+          Alertas - {activeCustomer.customerName}
+        </h2>
+        <p className="mt-2 text-sm text-slate-600">
+          Eventos operacionais do cliente selecionado.
+        </p>
+      </div>
+
       {list.length === 0 ? (
         <EmptyState
           title="Nenhum alerta registrado"
@@ -38,11 +77,15 @@ export default async function AlertsPage() {
               <td className="px-4 py-3 font-medium">
                 {alert.title}
                 {alert.occurrenceCount && alert.occurrenceCount > 1 ? (
-                  <span className="ml-2 text-sm font-semibold text-slate-500">x{alert.occurrenceCount}</span>
+                  <span className="ml-2 text-sm font-semibold text-slate-500">
+                    x{alert.occurrenceCount}
+                  </span>
                 ) : null}
               </td>
               <td className="px-4 py-3">{alert.source}</td>
-              <td className="px-4 py-3"><SeverityBadge severity={alert.severity} /></td>
+              <td className="px-4 py-3">
+                <SeverityBadge severity={alert.severity} />
+              </td>
               <td className="px-4 py-3">{translateStatus(alert.status)}</td>
             </tr>
           ))}
