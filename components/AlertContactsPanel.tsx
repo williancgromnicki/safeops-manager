@@ -115,6 +115,10 @@ export function AlertContactsPanel({
 
   useEffect(() => {
     setContactsState(contacts);
+
+    setSelectedContactIds((current) =>
+      current.filter((id) => contacts.some((contact) => contact.id === id)),
+    );
   }, [contacts]);
 
   const resetForm = () => {
@@ -130,63 +134,6 @@ export function AlertContactsPanel({
     setIsFormOpen(true);
   };
 
-  const toggleContactSelection = (contactId: string) => {
-    setSelectedContactIds((current) =>
-      current.includes(contactId)
-        ? current.filter((id) => id !== contactId)
-        : [...current, contactId],
-    );
-  };
-
-  const deleteSelectedContacts = () => {
-    if (selectedContactIds.length === 0) {
-      return;
-    }
-
-    const shouldDelete = window.confirm(
-      selectedContactIds.length > 1
-        ? 'Deseja deletar os contatos selecionados?'
-        : 'Deseja deletar o contato selecionado?',
-    );
-
-    if (!shouldDelete) {
-      return;
-    }
-
-    setMessage(null);
-
-    startTransition(async () => {
-      try {
-        const formData = new FormData();
-
-        selectedContactIds.forEach((id) => formData.append('ids', id));
-        const result = await deleteAlertContactsAction(formData);
-        if (!result.success) {
-          throw new Error(result.message);
-        }
-
-        setSelectedContactIds([]);
-        setIsMenuOpen(false);
-        setMessage({
-          type: 'success',
-          text:
-            selectedContactIds.length > 1
-              ? 'Contatos deletados com sucesso.'
-              : 'Contato deletado com sucesso.',
-        });
-        router.refresh();
-      } catch (error) {
-        setMessage({
-          type: 'error',
-          text:
-            error instanceof Error
-              ? `Erro ao deletar contato: ${error.message}`
-              : 'Erro ao deletar contato.',
-        });
-      }
-    });
-  };
-
   const openEdit = (contact: AlertContactRecord) => {
     setMessage(null);
     setEditingContact(contact);
@@ -200,6 +147,77 @@ export function AlertContactsPanel({
       receivesWarn: contact.receivesWarn,
       receivesCrit: contact.receivesCrit,
       isActive: contact.isActive,
+    });
+  };
+
+  const toggleContactSelection = (contactId: string) => {
+    setSelectedContactIds((current) =>
+      current.includes(contactId)
+        ? current.filter((id) => id !== contactId)
+        : [...current, contactId],
+    );
+  };
+
+  const deleteSelectedContacts = () => {
+    if (selectedContactIds.length === 0) {
+      setMessage({
+        type: 'error',
+        text: 'Selecione ao menos um contato para excluir.',
+      });
+      return;
+    }
+
+    const idsToDelete = [...selectedContactIds];
+
+    const shouldDelete = window.confirm(
+      idsToDelete.length > 1
+        ? 'Deseja excluir os contatos selecionados?'
+        : 'Deseja excluir o contato selecionado?',
+    );
+
+    if (!shouldDelete) {
+      return;
+    }
+
+    setMessage(null);
+
+    startTransition(async () => {
+      try {
+        const formData = new FormData();
+
+        idsToDelete.forEach((id) => formData.append('ids', id));
+
+        const result = await deleteAlertContactsAction(formData);
+
+        if (!result.success) {
+          throw new Error(result.message);
+        }
+
+        setContactsState((current) =>
+          current.filter((contact) => !idsToDelete.includes(contact.id)),
+        );
+
+        setSelectedContactIds([]);
+        setIsMenuOpen(false);
+
+        setMessage({
+          type: 'success',
+          text:
+            idsToDelete.length > 1
+              ? 'Contatos excluídos com sucesso.'
+              : 'Contato excluído com sucesso.',
+        });
+
+        router.refresh();
+      } catch (error) {
+        setMessage({
+          type: 'error',
+          text:
+            error instanceof Error
+              ? `Erro ao excluir contato: ${error.message}`
+              : 'Erro ao excluir contato.',
+        });
+      }
     });
   };
 
@@ -402,6 +420,7 @@ export function AlertContactsPanel({
               >
                 ...
               </button>
+
               {isMenuOpen ? (
                 <div className="absolute right-0 top-11 z-10 min-w-[190px] rounded-md border border-slate-200 bg-white p-1 shadow-lg">
                   <button
@@ -410,11 +429,12 @@ export function AlertContactsPanel({
                     onClick={deleteSelectedContacts}
                     className="w-full rounded px-3 py-2 text-left text-sm text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Deletar selecionados
+                    Excluir selecionados
                   </button>
                 </div>
               ) : null}
             </div>
+
             <button
               type="button"
               onClick={openCreate}
