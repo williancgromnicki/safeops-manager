@@ -254,9 +254,8 @@ setMessage({
               ? `Erro ao salvar contato: ${error.message}`
               : 'Erro ao salvar contato.',
         });
-      }
+      
     };
-  };
 
   const toggleStatus = (contact: AlertContactRecord) => {
     setMessage(null);
