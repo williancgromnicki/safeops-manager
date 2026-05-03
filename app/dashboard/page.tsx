@@ -78,15 +78,18 @@ export default async function DashboardPage({
     );
   }
 
+  const isDemoCustomer = activeCustomer.customerSlug === 'safesys-demo';
+
   const [realDevices, realAlerts] = await Promise.all([
     getDevices(activeCustomer.customerId),
     getAlerts(activeCustomer.customerId),
   ]);
 
-  const devices = realDevices.length > 0 ? realDevices : DEMO_DEVICES;
-  const alerts = realAlerts.length > 0 ? realAlerts : DEMO_ALERTS;
+  const devices = isDemoCustomer && realDevices.length === 0 ? DEMO_DEVICES : realDevices;
+  const alerts = isDemoCustomer && realAlerts.length === 0 ? DEMO_ALERTS : realAlerts;
 
   const hasRealData = realDevices.length > 0 || realAlerts.length > 0;
+  const hasDisplayData = devices.length > 0 || alerts.length > 0;
 
   const offline = devices.filter((device) => device.status === 'offline').length;
   const online = devices.filter((device) => device.status === 'online').length;
@@ -99,14 +102,15 @@ export default async function DashboardPage({
     (alert) => isAlertOpen(alert) && alert.severity === 'CRIT',
   ).length;
 
-  const metrics = hasRealData
-    ? {
-        monitoredSites: devices.length,
-        activeDevices: online,
-        risksInAttention: attention + activeAlerts,
-        criticalEvents: criticalAlerts + offline,
-      }
-    : DEMO_DASHBOARD_METRICS;
+  const metrics =
+    isDemoCustomer && !hasRealData
+      ? DEMO_DASHBOARD_METRICS
+      : {
+          monitoredSites: devices.length,
+          activeDevices: online,
+          risksInAttention: attention + activeAlerts,
+          criticalEvents: criticalAlerts + offline,
+        };
 
   const customerName =
     activeCustomer.customerName ?? DEMO_CUSTOMERS[0]?.name ?? 'Cliente';
@@ -120,23 +124,23 @@ export default async function DashboardPage({
         </p>
       </div>
 
-      {!hasRealData && metrics.activeDevices === 0 ? (
+      {!hasDisplayData ? (
         <EmptyState
           title="Sem dados para o dashboard"
-          description="Os indicadores serão exibidos aqui quando houver dispositivos e alertas cadastrados."
+          description="Os indicadores serão exibidos aqui quando houver dispositivos e alertas cadastrados para este cliente."
         />
       ) : null}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Total de dispositivos"
-          value={String(devices.length)}
+          value={String(metrics.monitoredSites)}
           helper={<StatusBadge status={getOverallStatus(devices, alerts)} />}
         />
 
         <StatCard
           label="Dispositivos online"
-          value={String(online)}
+          value={String(metrics.activeDevices)}
           helper={<StatusBadge status="Saudável" />}
         />
 
