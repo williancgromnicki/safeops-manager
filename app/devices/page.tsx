@@ -1,10 +1,22 @@
 import { redirect } from 'next/navigation';
-export const dynamic = 'force-dynamic';
+
 import { DataTable } from '@/components/DataTable';
 import { EmptyState } from '@/components/EmptyState';
-import { getCurrentCustomer } from '@/lib/data/get-current-customer';
+import { resolveCurrentCustomer } from '@/lib/data/get-current-customer';
 import { getDevices } from '@/lib/data/get-devices';
-import { DEMO_DEVICES, type DemoDevice, type OperationalStatus } from '@/lib/demo-data';
+import {
+  DEMO_DEVICES,
+  type DemoDevice,
+  type OperationalStatus,
+} from '@/lib/demo-data';
+
+export const dynamic = 'force-dynamic';
+
+type DevicesPageProps = {
+  searchParams?: Promise<{
+    customerId?: string;
+  }>;
+};
 
 const statusLabel: Record<OperationalStatus, string> = {
   online: 'Online',
@@ -33,22 +45,42 @@ function StatusBadge({ status }: { status: OperationalStatus }) {
   );
 }
 
-export default async function DevicesPage() {
-  const customer = await getCurrentCustomer();
+export default async function DevicesPage({ searchParams }: DevicesPageProps) {
+  const params = searchParams ? await searchParams : {};
+  const customerContext = await resolveCurrentCustomer(params.customerId);
 
-  if (!customer) {
+  if (!customerContext) {
     redirect('/login');
   }
 
-  const devices: DemoDevice[] = customer
-    ? (await getDevices(customer.customerId))
-    : [];
+  const activeCustomer = customerContext.activeCustomer;
 
+  if (!activeCustomer) {
+    return (
+      <section className="space-y-6">
+        <h2 className="section-title">Dispositivos</h2>
+
+        <EmptyState
+          title="Nenhum cliente vinculado"
+          description="Seu usuário ainda não possui clientes vinculados para exibição de dispositivos."
+        />
+      </section>
+    );
+  }
+
+  const devices: DemoDevice[] = await getDevices(activeCustomer.customerId);
   const list = devices.length > 0 ? devices : DEMO_DEVICES;
 
   return (
     <section className="space-y-6">
-      <h2 className="section-title">Dispositivos</h2>
+      <div>
+        <h2 className="section-title">
+          Dispositivos - {activeCustomer.customerName}
+        </h2>
+        <p className="mt-2 text-sm text-slate-600">
+          Inventário operacional do cliente selecionado.
+        </p>
+      </div>
 
       {list.length === 0 ? (
         <EmptyState
