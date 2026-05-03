@@ -1,5 +1,4 @@
 import { redirect } from 'next/navigation';
-export const dynamic = 'force-dynamic';
 import { AlertContactsPanel } from '@/components/AlertContactsPanel';
 import { DataTable } from '@/components/DataTable';
 import { EmptyState } from '@/components/EmptyState';
