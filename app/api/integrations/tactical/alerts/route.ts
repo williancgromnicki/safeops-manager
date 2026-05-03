@@ -22,7 +22,10 @@ type IncomingPayload = {
 
 function parseOccurredAt(occurredAt?: string): string {
   const date = occurredAt ? new Date(occurredAt) : new Date();
-  return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+
+  return Number.isNaN(date.getTime())
+    ? new Date().toISOString()
+    : date.toISOString();
 }
 
 function buildFingerprint(payload: IncomingPayload, customerId: string): string {
@@ -35,8 +38,60 @@ function buildFingerprint(payload: IncomingPayload, customerId: string): string 
   }
 
   const alertType = checkType || 'unknown';
-  const title = (payload.check_name ?? 'Alerta operacional').trim().toLowerCase();
-  return `${hostname}::${alertType}::${title}`;
+  const title = (payload.check_name ?? 'Alerta operacional')
+    .trim()
+    .toLowerCase();
+
+  return `${customerId}::${hostname}::${alertType}::${title}`;
+}
+
+async function assignCustomerToDefaultAdmin(
+  supabaseAdmin: ReturnType<typeof getSupabaseAdmin>,
+  customerId: string,
+): Promise<void> {
+  const defaultAdminUserId = process.env.SAFEOPS_DEFAULT_ADMIN_USER_ID;
+
+  if (!defaultAdminUserId) {
+    console.warn(
+      'SAFEOPS_DEFAULT_ADMIN_USER_ID não configurado. Cliente não foi autoatribuído ao admin padrão.',
+    );
+    return;
+  }
+
+  const { data: existingAccess, error: findAccessError } = await supabaseAdmin
+    .from('user_customer_access')
+    .select('customer_id')
+    .eq('user_id', defaultAdminUserId)
+    .eq('customer_id', customerId)
+    .limit(1)
+    .maybeSingle();
+
+  if (findAccessError) {
+    console.error(
+      'Erro ao verificar vínculo do cliente com admin padrão:',
+      findAccessError,
+    );
+    return;
+  }
+
+  if (existingAccess) {
+    return;
+  }
+
+  const { error: insertAccessError } = await supabaseAdmin
+    .from('user_customer_access')
+    .insert({
+      user_id: defaultAdminUserId,
+      customer_id: customerId,
+      role: 'admin',
+    });
+
+  if (insertAccessError) {
+    console.error(
+      'Erro ao vincular cliente ao admin padrão:',
+      insertAccessError,
+    );
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -44,7 +99,10 @@ export async function POST(request: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
 
   if (!token || token !== process.env.SAFEOPS_WEBHOOK_TOKEN) {
-    return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json(
+      { ok: false, error: 'Unauthorized' },
+      { status: 401 },
+    );
   }
 
   let payload: IncomingPayload;
@@ -52,7 +110,10 @@ export async function POST(request: NextRequest) {
   try {
     payload = (await request.json()) as IncomingPayload;
   } catch {
-    return NextResponse.json({ ok: false, error: 'Invalid JSON payload' }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: 'Invalid JSON payload' },
+      { status: 400 },
+    );
   }
 
   if (!payload.client || !payload.hostname) {
@@ -65,7 +126,8 @@ export async function POST(request: NextRequest) {
   const occurredAt = parseOccurredAt(payload.occurred_at);
   const severity = normalizeSeverity(payload.severity ?? payload.status);
   const normalizedStatus = normalizeStatus(payload.status);
-  const isOfflineCheck = isAvailabilityCheck(payload.check_type) && severity === 'CRIT';
+  const isOfflineCheck =
+    isAvailabilityCheck(payload.check_type) && severity === 'CRIT';
 
   const { data: customerMatch, error: customerFindError } = await supabaseAdmin
     .from('customers')
@@ -75,7 +137,10 @@ export async function POST(request: NextRequest) {
     .maybeSingle();
 
   if (customerFindError) {
-    return NextResponse.json({ ok: false, error: customerFindError.message }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: customerFindError.message },
+      { status: 500 },
+    );
   }
 
   let customerId = customerMatch?.id as string | undefined;
@@ -91,11 +156,16 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (createCustomerError) {
-      return NextResponse.json({ ok: false, error: createCustomerError.message }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: createCustomerError.message },
+        { status: 500 },
+      );
     }
 
     customerId = newCustomer.id as string;
   }
+
+  await assignCustomerToDefaultAdmin(supabaseAdmin, customerId);
 
   const { data: deviceMatch, error: deviceFindError } = await supabaseAdmin
     .from('devices')
@@ -106,7 +176,10 @@ export async function POST(request: NextRequest) {
     .maybeSingle();
 
   if (deviceFindError) {
-    return NextResponse.json({ ok: false, error: deviceFindError.message }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: deviceFindError.message },
+      { status: 500 },
+    );
   }
 
   let deviceId = deviceMatch?.id as string | undefined;
@@ -129,7 +202,10 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (createDeviceError) {
-      return NextResponse.json({ ok: false, error: createDeviceError.message }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: createDeviceError.message },
+        { status: 500 },
+      );
     }
 
     deviceId = newDevice.id as string;
@@ -143,18 +219,22 @@ export async function POST(request: NextRequest) {
   let action: 'created' | 'updated' | 'closed' | 'closed_without_open_alert';
 
   if (normalizedStatus === 'open') {
-    const { data: existingOpenAlert, error: existingOpenAlertError } = await supabaseAdmin
-      .from('alerts')
-      .select('id, occurrence_count')
-      .eq('customer_id', customerId)
-      .eq('device_id', deviceId)
-      .eq('fingerprint', fingerprint)
-      .eq('status', 'open')
-      .limit(1)
-      .maybeSingle();
+    const { data: existingOpenAlert, error: existingOpenAlertError } =
+      await supabaseAdmin
+        .from('alerts')
+        .select('id, occurrence_count')
+        .eq('customer_id', customerId)
+        .eq('device_id', deviceId)
+        .eq('fingerprint', fingerprint)
+        .eq('status', 'open')
+        .limit(1)
+        .maybeSingle();
 
     if (existingOpenAlertError) {
-      return NextResponse.json({ ok: false, error: existingOpenAlertError.message }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: existingOpenAlertError.message },
+        { status: 500 },
+      );
     }
 
     if (existingOpenAlert) {
@@ -175,51 +255,62 @@ export async function POST(request: NextRequest) {
         .single();
 
       if (updateAlertError) {
-        return NextResponse.json({ ok: false, error: updateAlertError.message }, { status: 500 });
+        return NextResponse.json(
+          { ok: false, error: updateAlertError.message },
+          { status: 500 },
+        );
       }
 
       alertRecord = updatedAlert;
       action = 'updated';
     } else {
-      const { data: createdAlert, error: createAlertError } = await supabaseAdmin
-        .from('alerts')
-        .insert({
-          customer_id: customerId,
-          device_id: deviceId,
-          source: 'safeops-webhook',
-          alert_type: alertType,
-          severity,
-          title,
-          details: payload.details,
-          status: 'open',
-          fingerprint,
-          occurrence_count: 1,
-          occurred_at: occurredAt,
-          last_seen_at: occurredAt,
-        })
-        .select('id')
-        .single();
+      const { data: createdAlert, error: createAlertError } =
+        await supabaseAdmin
+          .from('alerts')
+          .insert({
+            customer_id: customerId,
+            device_id: deviceId,
+            source: 'safeops-webhook',
+            alert_type: alertType,
+            severity,
+            title,
+            details: payload.details,
+            status: 'open',
+            fingerprint,
+            occurrence_count: 1,
+            occurred_at: occurredAt,
+            last_seen_at: occurredAt,
+          })
+          .select('id')
+          .single();
 
       if (createAlertError) {
-        return NextResponse.json({ ok: false, error: createAlertError.message }, { status: 500 });
+        return NextResponse.json(
+          { ok: false, error: createAlertError.message },
+          { status: 500 },
+        );
       }
 
       alertRecord = createdAlert;
       action = 'created';
     }
   } else {
-    const { data: existingOpenAlert, error: existingOpenAlertError } = await supabaseAdmin
-      .from('alerts')
-      .select('id')
-      .eq('customer_id', customerId)
-      .eq('device_id', deviceId)
-      .eq('fingerprint', fingerprint)
-      .eq('status', 'open')
-      .limit(1)
-      .maybeSingle();
+    const { data: existingOpenAlert, error: existingOpenAlertError } =
+      await supabaseAdmin
+        .from('alerts')
+        .select('id')
+        .eq('customer_id', customerId)
+        .eq('device_id', deviceId)
+        .eq('fingerprint', fingerprint)
+        .eq('status', 'open')
+        .limit(1)
+        .maybeSingle();
 
     if (existingOpenAlertError) {
-      return NextResponse.json({ ok: false, error: existingOpenAlertError.message }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: existingOpenAlertError.message },
+        { status: 500 },
+      );
     }
 
     const resolutionMessage = payload.details
@@ -244,34 +335,41 @@ export async function POST(request: NextRequest) {
         .single();
 
       if (closeAlertError) {
-        return NextResponse.json({ ok: false, error: closeAlertError.message }, { status: 500 });
+        return NextResponse.json(
+          { ok: false, error: closeAlertError.message },
+          { status: 500 },
+        );
       }
 
       alertRecord = closedAlert;
       action = 'closed';
     } else {
-      const { data: closedWithoutOpenAlert, error: createClosedAlertError } = await supabaseAdmin
-        .from('alerts')
-        .insert({
-          customer_id: customerId,
-          device_id: deviceId,
-          source: 'safeops-webhook',
-          alert_type: alertType,
-          severity: 'INFO',
-          title,
-          details: resolutionMessage,
-          status: 'closed',
-          fingerprint,
-          occurrence_count: 1,
-          occurred_at: occurredAt,
-          last_seen_at: occurredAt,
-          resolved_at: occurredAt,
-        })
-        .select('id')
-        .single();
+      const { data: closedWithoutOpenAlert, error: createClosedAlertError } =
+        await supabaseAdmin
+          .from('alerts')
+          .insert({
+            customer_id: customerId,
+            device_id: deviceId,
+            source: 'safeops-webhook',
+            alert_type: alertType,
+            severity: 'INFO',
+            title,
+            details: resolutionMessage,
+            status: 'closed',
+            fingerprint,
+            occurrence_count: 1,
+            occurred_at: occurredAt,
+            last_seen_at: occurredAt,
+            resolved_at: occurredAt,
+          })
+          .select('id')
+          .single();
 
       if (createClosedAlertError) {
-        return NextResponse.json({ ok: false, error: createClosedAlertError.message }, { status: 500 });
+        return NextResponse.json(
+          { ok: false, error: createClosedAlertError.message },
+          { status: 500 },
+        );
       }
 
       alertRecord = closedWithoutOpenAlert;
@@ -286,7 +384,10 @@ export async function POST(request: NextRequest) {
     .eq('status', 'open');
 
   if (openCountError) {
-    return NextResponse.json({ ok: false, error: openCountError.message }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: openCountError.message },
+      { status: 500 },
+    );
   }
 
   const openAlertsCount = openAlerts ?? 0;
@@ -321,7 +422,10 @@ export async function POST(request: NextRequest) {
     .eq('id', deviceId);
 
   if (updateDeviceError) {
-    return NextResponse.json({ ok: false, error: updateDeviceError.message }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: updateDeviceError.message },
+      { status: 500 },
+    );
   }
 
   const { data: activeContacts, error: contactsReadError } = await supabaseAdmin
@@ -331,13 +435,17 @@ export async function POST(request: NextRequest) {
     .eq('is_active', true);
 
   if (contactsReadError) {
-    return NextResponse.json({ ok: false, error: contactsReadError.message }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: contactsReadError.message },
+      { status: 500 },
+    );
   }
 
   const filteredContactEmails = (activeContacts ?? [])
     .filter((contact) => {
       if (severity === 'INFO') return contact.receives_info === true;
       if (severity === 'WARN') return contact.receives_warn === true;
+
       return contact.receives_crit === true;
     })
     .map((contact) => contact.email);
