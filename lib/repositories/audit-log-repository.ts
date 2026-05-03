@@ -15,20 +15,16 @@ type WriteAuditLogInput = {
 export async function writeAuditLog(input: WriteAuditLogInput): Promise<void> {
   const supabase = getSupabaseAdmin();
 
-  const occurredAt = new Date().toISOString();
-
   const { error } = await supabase.from('audit_log').insert({
-    customer_id: input.customerId,
     user_id: input.userId,
+    customer_id: input.customerId,
     action: input.action,
-    entity_type: 'alert_contact',
-    entity_id: input.contactId,
-    occurred_at: occurredAt,
-    payload: {
+    target_type: 'customer_alert_contact',
+    target_id: input.contactId,
+    metadata: {
       userId: input.userId,
       customerId: input.customerId,
       contactId: input.contactId,
-      occurredAt,
       ...(input.context ?? {}),
     },
   });
