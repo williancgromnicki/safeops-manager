@@ -7,7 +7,7 @@ import {
   updateAlertContact as updateAlertContactRepository,
   type AlertContactRecord,
 } from '@/lib/repositories/alert-contacts-repository';
-import { writeAuditLog } from '@/lib/repositories/log-repository';
+import { writeAuditLog } from '@/lib/repositories/audit-log-repository';
 
 type UserProfile = {
   role: string | null;
