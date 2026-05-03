@@ -139,6 +139,7 @@ type UpdateAlertContactInput = {
   receivesInfo: boolean;
   receivesWarn: boolean;
   receivesCrit: boolean;
+  isActive?: boolean;
 };
 
 export async function updateAlertContact(
