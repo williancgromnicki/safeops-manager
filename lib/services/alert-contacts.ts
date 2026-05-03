@@ -7,7 +7,7 @@ import {
   updateAlertContact as updateAlertContactRepository,
   type AlertContactRecord,
 } from '@/lib/repositories/alert-contacts-repository';
-import { writeAuditLog } from '@/lib/repositories/audit-log-repository';
+import { writeAuditLog } from '@/lib/repositories/log-repository';
 
 type UserProfile = {
   role: string | null;
@@ -47,6 +47,14 @@ export type ActivateAlertContactInput = {
   id: string;
   customerId: string;
 };
+
+type AuditAction =
+  | 'alert_contact_created'
+  | 'alert_contact_updated'
+  | 'alert_contact_enabled'
+  | 'alert_contact_disabled';
+
+type AuditContext = Record<string, unknown>;
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -122,6 +130,35 @@ async function requireAuthenticatedAdmin(
   };
 }
 
+function contactAuditContext(
+  contact: AlertContactRecord,
+  extra?: AuditContext,
+): AuditContext {
+  return {
+    email: contact.email,
+    name: contact.name,
+    receivesInfo: contact.receivesInfo,
+    receivesWarn: contact.receivesWarn,
+    receivesCrit: contact.receivesCrit,
+    isActive: contact.isActive,
+    ...(extra ?? {}),
+  };
+}
+
+async function writeAuditLogSafely(input: {
+  userId: string;
+  customerId: string;
+  contactId: string;
+  action: AuditAction;
+  context?: AuditContext;
+}) {
+  try {
+    await writeAuditLog(input);
+  } catch (error) {
+    console.error('Failed to write audit log:', error);
+  }
+}
+
 export async function listAlertContactsService(
   input: ListAlertContactsInput = {},
 ): Promise<AlertContactRecord[]> {
@@ -155,14 +192,15 @@ export async function createAlertContact(
     receivesInfo: input.receivesInfo,
     receivesWarn: input.receivesWarn,
     receivesCrit: input.receivesCrit,
+    isActive: input.isActive ?? true,
   });
 
-  await writeAuditLog({
+  await writeAuditLogSafely({
     userId,
     customerId: createdContact.customerId,
     contactId: createdContact.id,
     action: 'alert_contact_created',
-    context: { email: createdContact.email },
+    context: contactAuditContext(createdContact),
   });
 
   return createdContact;
@@ -184,45 +222,18 @@ export async function updateAlertContact(
     receivesInfo: input.receivesInfo,
     receivesWarn: input.receivesWarn,
     receivesCrit: input.receivesCrit,
+    isActive: input.isActive,
   });
 
-  await writeAuditLog({
+  await writeAuditLogSafely({
     userId,
     customerId: updatedContact.customerId,
     contactId: updatedContact.id,
     action: 'alert_contact_updated',
-    context: { email: updatedContact.email },
+    context: contactAuditContext(updatedContact),
   });
 
-  if (typeof input.isActive !== 'boolean' || updatedContact.isActive === input.isActive) {
-    return updatedContact;
-  }
-
-  if (input.isActive) {
-    const activatedContact = await activateAlertContactRepository(input.id, input.customerId);
-
-    await writeAuditLog({
-      userId,
-      customerId: activatedContact.customerId,
-      contactId: activatedContact.id,
-      action: 'alert_contact_enabled',
-      context: { source: 'update_alert_contact' },
-    });
-
-    return activatedContact;
-  }
-
-  const deactivatedContact = await deactivateAlertContactRepository(input.id, input.customerId);
-
-  await writeAuditLog({
-    userId,
-    customerId: deactivatedContact.customerId,
-    contactId: deactivatedContact.id,
-    action: 'alert_contact_disabled',
-    context: { source: 'update_alert_contact' },
-  });
-
-  return deactivatedContact;
+  return updatedContact;
 }
 
 export async function deactivateAlertContact(
@@ -230,14 +241,19 @@ export async function deactivateAlertContact(
 ): Promise<AlertContactRecord> {
   const { userId } = await requireAuthenticatedAdmin(input.customerId);
 
-  const deactivatedContact = await deactivateAlertContactRepository(input.id, input.customerId);
+  const deactivatedContact = await deactivateAlertContactRepository(
+    input.id,
+    input.customerId,
+  );
 
-  await writeAuditLog({
+  await writeAuditLogSafely({
     userId,
     customerId: deactivatedContact.customerId,
     contactId: deactivatedContact.id,
     action: 'alert_contact_disabled',
-    context: { source: 'toggle_alert_contact' },
+    context: contactAuditContext(deactivatedContact, {
+      source: 'toggle_alert_contact',
+    }),
   });
 
   return deactivatedContact;
@@ -248,14 +264,19 @@ export async function activateAlertContact(
 ): Promise<AlertContactRecord> {
   const { userId } = await requireAuthenticatedAdmin(input.customerId);
 
-  const activatedContact = await activateAlertContactRepository(input.id, input.customerId);
+  const activatedContact = await activateAlertContactRepository(
+    input.id,
+    input.customerId,
+  );
 
-  await writeAuditLog({
+  await writeAuditLogSafely({
     userId,
     customerId: activatedContact.customerId,
     contactId: activatedContact.id,
     action: 'alert_contact_enabled',
-    context: { source: 'toggle_alert_contact' },
+    context: contactAuditContext(activatedContact, {
+      source: 'toggle_alert_contact',
+    }),
   });
 
   return activatedContact;
