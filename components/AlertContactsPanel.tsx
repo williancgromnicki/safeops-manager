@@ -230,24 +230,18 @@ export function AlertContactsPanel({
             isActive: formState.isActive,
           });
 
-          const createdContact = await createAlertContactAction(formData);
+          cconst result = await createAlertContactAction(formData);
 
-if (createdContact) {
-  setContactsState((current) => [
-    {
-      ...createdContact,
-      customerName:
-        createdContact.customerName ||
-        selectedCustomer?.name ||
-        '—',
-    },
-    ...current,
-  ]);
+if (result && 'success' in result && result.success === false) {
+  throw new Error(result.message || 'Não foi possível criar o contato.');
 }
 
 setMessage({
   type: 'success',
-  text: 'Contato criado com sucesso.',
+  text:
+    result && 'message' in result && result.message
+      ? result.message
+      : 'Contato criado com sucesso.',
 });
 
         resetForm();
