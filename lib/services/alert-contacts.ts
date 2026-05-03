@@ -48,6 +48,7 @@ export type ActivateAlertContactInput = {
   id: string;
   customerId: string;
 };
+
 export type DeleteAlertContactsInput = {
   ids: string[];
 };
@@ -296,6 +297,10 @@ export async function deleteAlertContacts(
     new Set(input.ids.map((id) => id.trim()).filter(Boolean)),
   );
 
+  if (sanitizedIds.length === 0) {
+    throw new Error('Selecione ao menos um contato para excluir.');
+  }
+
   const deletedContacts = await deleteAlertContactsRepository(
     sanitizedIds,
     allowedCustomerIds,
@@ -308,7 +313,9 @@ export async function deleteAlertContacts(
         customerId: contact.customerId,
         contactId: contact.id,
         action: 'alert_contact_deleted',
-        context: contactAuditContext(contact, { source: 'bulk_delete' }),
+        context: contactAuditContext(contact, {
+          source: 'bulk_delete',
+        }),
       }),
     ),
   );
