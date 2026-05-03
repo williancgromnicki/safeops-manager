@@ -288,7 +288,7 @@ const toggleStatus = (contact: AlertContactRecord) => {
         <EmptyState title="Nenhum contato de alerta cadastrado" description="Os contatos configurados para receber notificações de clientes aparecerão aqui." />
       ) : (
         <DataTable columns={['Cliente', 'Nome', 'E-mail', 'Recebe informativos', 'Recebe alertas', 'Recebe alertas críticos', 'Status', 'Ações']}>
-          {contacts.map((contact) => (
+          {contactsState.map((contact) => (
             <tr key={contact.id} className="text-slate-700">
               <td className="px-4 py-3 font-medium">{contact.customerName}</td><td className="px-4 py-3">{contact.name?.trim() || '—'}</td><td className="px-4 py-3">{contact.email}</td>
               <td className="px-4 py-3"><BooleanBadge value={contact.receivesInfo} /></td><td className="px-4 py-3"><BooleanBadge value={contact.receivesWarn} /></td><td className="px-4 py-3"><BooleanBadge value={contact.receivesCrit} /></td>
