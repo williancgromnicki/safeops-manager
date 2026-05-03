@@ -100,10 +100,6 @@ export function Sidebar() {
     return customers[0]?.customerId ?? null;
   }, [customerIdFromUrl, customers]);
 
-  const activeCustomer = customers.find(
-    (customer) => customer.customerId === activeCustomerId,
-  );
-
   const handleCustomerChange = (customerId: string) => {
     const params = new URLSearchParams(searchParams.toString());
 
@@ -125,26 +121,26 @@ export function Sidebar() {
         SafeOps Manager
       </p>
 
-      <div className="mb-6 rounded-xl border border-surface-border bg-brand-900 p-4 text-white shadow-sm">
-        <p className="text-xs font-medium uppercase tracking-wide text-brand-100">
+      <div className="mb-6 rounded-xl border border-surface-border bg-white p-4 shadow-sm">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
           Cliente ativo
         </p>
 
         {isLoadingCustomers ? (
-          <div className="mt-3 h-10 rounded-lg bg-white/10" />
+          <div className="mt-3 h-10 rounded-lg bg-slate-100" />
         ) : customers.length === 0 ? (
-          <p className="mt-2 text-sm text-brand-100">
+          <p className="mt-2 text-sm text-slate-500">
             Nenhum cliente vinculado
           </p>
         ) : customers.length === 1 ? (
-          <p className="mt-2 truncate text-sm font-semibold text-white">
+          <p className="mt-2 truncate text-sm font-semibold text-brand-900">
             {customers[0].customerName}
           </p>
         ) : (
           <select
             value={activeCustomerId ?? ''}
             onChange={(event) => handleCustomerChange(event.target.value)}
-            className="mt-3 w-full rounded-lg border border-white/20 bg-white px-3 py-2 text-sm font-semibold text-brand-900 outline-none transition focus:border-brand-300 focus:ring-2 focus:ring-white/30"
+            className="mt-3 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-brand-900 outline-none transition focus:border-brand-700 focus:ring-2 focus:ring-brand-100"
           >
             {customers.map((customer) => (
               <option key={customer.customerId} value={customer.customerId}>
@@ -153,12 +149,6 @@ export function Sidebar() {
             ))}
           </select>
         )}
-
-        {activeCustomer ? (
-          <p className="mt-2 truncate text-xs text-brand-100">
-            {activeCustomer.customerSlug}
-          </p>
-        ) : null}
       </div>
 
       <ul className="space-y-2">
