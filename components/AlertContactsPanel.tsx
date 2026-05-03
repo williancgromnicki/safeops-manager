@@ -255,7 +255,7 @@ setMessage({
               : 'Erro ao salvar contato.',
         });
       }
-    });
+    };
   };
 
   const toggleStatus = (contact: AlertContactRecord) => {
