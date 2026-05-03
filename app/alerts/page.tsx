@@ -42,17 +42,19 @@ export default async function AlertsPage({ searchParams }: AlertsPageProps) {
     );
   }
 
-  const alerts = await getAlerts(activeCustomer.customerId);
+  const isDemoCustomer = activeCustomer.customerSlug === 'safesys-demo';
+
+  const realAlerts = await getAlerts(activeCustomer.customerId);
 
   const list: AlertItem[] =
-    alerts.length > 0
-      ? alerts
-      : DEMO_ALERTS.map((alert) => ({
+    isDemoCustomer && realAlerts.length === 0
+      ? DEMO_ALERTS.map((alert) => ({
           ...alert,
           status: 'open',
           occurrenceCount: 1,
           lastSeenAt: null,
-        }));
+        }))
+      : realAlerts;
 
   return (
     <section className="space-y-6">
@@ -68,7 +70,7 @@ export default async function AlertsPage({ searchParams }: AlertsPageProps) {
       {list.length === 0 ? (
         <EmptyState
           title="Nenhum alerta registrado"
-          description="Quando eventos forem detectados, eles aparecerão nesta listagem."
+          description="Quando eventos forem detectados para este cliente, eles aparecerão nesta listagem."
         />
       ) : (
         <DataTable columns={['Alerta', 'Origem', 'Severidade', 'Status']}>
