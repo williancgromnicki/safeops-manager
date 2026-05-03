@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 
 import { DataTable } from '@/components/DataTable';
+import { DevicePlatformIcon } from '@/components/DevicePlatformIcon';
 import { EmptyState } from '@/components/EmptyState';
 import { resolveCurrentCustomer } from '@/lib/data/get-current-customer';
 import { getDevices } from '@/lib/data/get-devices';
@@ -71,9 +72,8 @@ export default async function DevicesPage({ searchParams }: DevicesPageProps) {
   const isDemoCustomer = activeCustomer.customerSlug === 'safesys-demo';
 
   const realDevices: DemoDevice[] = await getDevices(activeCustomer.customerId);
-  const list = isDemoCustomer && realDevices.length === 0
-    ? DEMO_DEVICES
-    : realDevices;
+  const list =
+    isDemoCustomer && realDevices.length === 0 ? DEMO_DEVICES : realDevices;
 
   return (
     <section className="space-y-6">
@@ -104,13 +104,32 @@ export default async function DevicesPage({ searchParams }: DevicesPageProps) {
         >
           {list.map((device) => (
             <tr key={device.id} className="text-slate-700">
-              <td className="px-4 py-3 font-medium">{device.name}</td>
+              <td className="px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <DevicePlatformIcon
+                    operatingSystem={device.operatingSystem}
+                    deviceName={device.name}
+                  />
+
+                  <div>
+                    <p className="font-medium text-slate-800">{device.name}</p>
+                    <p className="text-xs text-slate-500">
+                      {device.operatingSystem || 'Sistema não identificado'}
+                    </p>
+                  </div>
+                </div>
+              </td>
+
               <td className="px-4 py-3">{device.site}</td>
+
               <td className="px-4 py-3">
                 <StatusBadge status={device.status} />
               </td>
+
               <td className="px-4 py-3">{device.operatingSystem}</td>
+
               <td className="px-4 py-3">{device.lastSeen}</td>
+
               <td className="px-4 py-3">{device.activeAlerts}</td>
             </tr>
           ))}
