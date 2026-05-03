@@ -230,7 +230,7 @@ export function AlertContactsPanel({
             isActive: formState.isActive,
           });
 
-          cconst result = await createAlertContactAction(formData);
+          const result = await createAlertContactAction(formData);
 
 if (result && 'success' in result && result.success === false) {
   throw new Error(result.message || 'Não foi possível criar o contato.');
