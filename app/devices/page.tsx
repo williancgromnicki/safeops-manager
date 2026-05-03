@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-
+export const dynamic = 'force-dynamic';
 import { DataTable } from '@/components/DataTable';
 import { EmptyState } from '@/components/EmptyState';
 import { getCurrentCustomer } from '@/lib/data/get-current-customer';
