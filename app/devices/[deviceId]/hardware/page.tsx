@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -28,14 +29,186 @@ type HardwareInventory = {
   raw?: unknown;
 };
 
+type StorageInventory = {
+  summary?: Record<string, unknown>;
+  physical_disks?: unknown[];
+  volumes?: unknown[];
+};
+
+type NetworkInventory = {
+  adapter_count?: number;
+  adapters?: unknown[];
+};
+
 type DeviceWithHardwareInventory = {
   hardwareInventory?: HardwareInventory | null;
   hardware_inventory?: HardwareInventory | null;
 };
 
-function formatValue(value: unknown): string {
+const labelMap: Record<string, string> = {
+  hostname: 'Hostname',
+  client: 'Cliente',
+  cliente: 'Cliente',
+  site: 'Site',
+  manufacturer: 'Fabricante',
+  fabricante: 'Fabricante',
+  model: 'Modelo',
+  modelo: 'Modelo',
+  serial_number: 'Número de série',
+  serial: 'Número de série',
+  tactical_agent_id: 'ID do agente Tactical',
+  last_seen_at: 'Último check-in',
+  ultimo_check_in: 'Último check-in',
+  last_inventory_at: 'Último inventário',
+  ultimo_inventario: 'Último inventário',
+
+  name: 'Nome',
+  description: 'Descrição',
+  caption: 'Descrição',
+  cores: 'Núcleos',
+  threads: 'Threads',
+  manufacturer_cpu: 'Fabricante',
+  max_clock_speed_mhz: 'Clock máximo',
+  total_gb: 'Total',
+  total_ram_gb: 'Memória RAM',
+  memoria_ram_gb: 'Memória RAM',
+
+  summary: 'Resumo',
+  physical_disks: 'Discos físicos',
+  volumes: 'Volumes',
+  physical_disk_count: 'Discos físicos',
+  volume_count: 'Volumes',
+  free_gb: 'Livre',
+  used_percent: 'Uso',
+  size_gb: 'Tamanho',
+  letter: 'Unidade',
+  label: 'Rótulo',
+  file_system: 'Sistema de arquivos',
+  drive_type: 'Tipo de unidade',
+  model_disk: 'Modelo',
+  serial_disk: 'Serial',
+  interface_type: 'Interface',
+  media_type: 'Tipo de mídia',
+  status: 'Status',
+
+  adapter_count: 'Adaptadores',
+  adapters: 'Adaptadores',
+  mac_address: 'MAC',
+  ip_addresses: 'Endereços IP',
+  gateways: 'Gateway',
+  dns_servers: 'DNS',
+  dhcp_enabled: 'DHCP',
+  speed: 'Velocidade',
+  index: 'Índice',
+
+  driver_version: 'Versão do driver',
+  video_processor: 'Processador gráfico',
+  adapter_ram_gb: 'Memória gráfica',
+
+  operatingSystem: 'Sistema operacional',
+  platform: 'Plataforma',
+  version: 'Versão',
+  build_number: 'Build',
+  architecture: 'Arquitetura',
+  install_date: 'Data de instalação',
+  last_boot_up_time: 'Último boot',
+};
+
+function humanizeKey(key: string): string {
+  return (
+    labelMap[key] ??
+    key
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (letter) => letter.toUpperCase())
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function formatDateLike(value: string): string {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString('pt-BR');
+}
+
+function formatSpeed(value: unknown): string {
   if (value === null || value === undefined || value === '') {
     return 'Não informado';
+  }
+
+  const numericValue = Number(value);
+
+  if (!Number.isFinite(numericValue) || numericValue <= 0) {
+    return 'Não informado';
+  }
+
+  if (numericValue > 1_000_000_000_000) {
+    return 'Não informado';
+  }
+
+  if (numericValue >= 1_000_000_000) {
+    return `${Number((numericValue / 1_000_000_000).toFixed(2))} Gbps`;
+  }
+
+  if (numericValue >= 1_000_000) {
+    return `${Number((numericValue / 1_000_000).toFixed(2))} Mbps`;
+  }
+
+  if (numericValue >= 1_000) {
+    return `${Number((numericValue / 1_000).toFixed(2))} Kbps`;
+  }
+
+  return `${numericValue} bps`;
+}
+
+function translateConnectionStatus(value: unknown): string {
+  const normalized = String(value ?? '').trim();
+
+  const statusMap: Record<string, string> = {
+    '0': 'Desconectado',
+    '1': 'Conectando',
+    '2': 'Conectado',
+    '3': 'Desconectando',
+    '4': 'Hardware ausente',
+    '5': 'Hardware desabilitado',
+    '6': 'Falha de hardware',
+    '7': 'Mídia desconectada',
+    '8': 'Autenticando',
+    '9': 'Autenticação bem-sucedida',
+    '10': 'Autenticação falhou',
+    '11': 'Endereço inválido',
+    '12': 'Credenciais necessárias',
+    OK: 'OK',
+  };
+
+  return statusMap[normalized] ?? normalized || 'Não informado';
+}
+
+function formatValue(key: string, value: unknown): string {
+  if (value === null || value === undefined || value === '') {
+    return 'Não informado';
+  }
+
+  if (key === 'speed') {
+    return formatSpeed(value);
+  }
+
+  if (key === 'status') {
+    return translateConnectionStatus(value);
+  }
+
+  if (key.endsWith('_gb') && typeof value === 'number') {
+    return `${value} GB`;
+  }
+
+  if (key === 'used_percent' && typeof value === 'number') {
+    return `${value}%`;
   }
 
   if (Array.isArray(value)) {
@@ -52,11 +225,49 @@ function formatValue(value: unknown): string {
       .join(', ');
   }
 
+  if (typeof value === 'boolean') {
+    return value ? 'Sim' : 'Não';
+  }
+
+  if (typeof value === 'string') {
+    if (/^\d{4}-\d{2}-\d{2}T/.test(value)) {
+      return formatDateLike(value);
+    }
+
+    return value;
+  }
+
   if (typeof value === 'object') {
     return JSON.stringify(value, null, 2);
   }
 
   return String(value);
+}
+
+function removeTechnicalFields(
+  data?: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  if (!data) {
+    return undefined;
+  }
+
+  const hiddenKeys = new Set([
+    'raw',
+    'summary',
+    'physical_disks',
+    'volumes',
+    'adapters',
+  ]);
+
+  const entries = Object.entries(data).filter(
+    ([key, value]) =>
+      !hiddenKeys.has(key) &&
+      value !== null &&
+      value !== undefined &&
+      value !== '',
+  );
+
+  return Object.fromEntries(entries);
 }
 
 function InfoItem({ label, value }: { label: string; value: unknown }) {
@@ -66,7 +277,7 @@ function InfoItem({ label, value }: { label: string; value: unknown }) {
         {label}
       </p>
       <p className="mt-1 whitespace-pre-wrap break-words text-sm font-medium text-slate-800">
-        {formatValue(value)}
+        {value as ReactNode}
       </p>
     </div>
   );
@@ -80,7 +291,7 @@ function InventorySection({
 }: {
   title: string;
   description?: string;
-  children: React.ReactNode;
+  children: ReactNode;
   defaultOpen?: boolean;
 }) {
   return (
@@ -108,7 +319,9 @@ function InventorySection({
 }
 
 function ObjectGrid({ data }: { data?: Record<string, unknown> }) {
-  if (!data || Object.keys(data).length === 0) {
+  const cleanData = removeTechnicalFields(data);
+
+  if (!cleanData || Object.keys(cleanData).length === 0) {
     return (
       <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">
         Dados ainda não disponíveis para esta seção.
@@ -118,14 +331,24 @@ function ObjectGrid({ data }: { data?: Record<string, unknown> }) {
 
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      {Object.entries(data).map(([key, value]) => (
-        <InfoItem key={key} label={key} value={value} />
+      {Object.entries(cleanData).map(([key, value]) => (
+        <InfoItem
+          key={key}
+          label={humanizeKey(key)}
+          value={formatValue(key, value)}
+        />
       ))}
     </div>
   );
 }
 
-function ArrayList({ data }: { data?: unknown[] }) {
+function ArrayCards({
+  data,
+  titlePrefix,
+}: {
+  data?: unknown[];
+  titlePrefix: string;
+}) {
   if (!data || data.length === 0) {
     return (
       <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">
@@ -136,24 +359,104 @@ function ArrayList({ data }: { data?: unknown[] }) {
 
   return (
     <div className="space-y-4">
-      {data.map((item, index) => (
-        <div
-          key={index}
-          className="rounded-xl border border-slate-200 bg-slate-50 p-4"
-        >
-          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Item {index + 1}
-          </p>
+      {data.map((item, index) => {
+        if (!isRecord(item)) {
+          return (
+            <div
+              key={index}
+              className="rounded-xl border border-slate-200 bg-slate-50 p-4"
+            >
+              <p className="text-sm font-medium text-slate-800">
+                {formatValue('value', item)}
+              </p>
+            </div>
+          );
+        }
 
-          {typeof item === 'object' && item !== null ? (
-            <ObjectGrid data={item as Record<string, unknown>} />
-          ) : (
-            <p className="text-sm font-medium text-slate-800">
-              {formatValue(item)}
-            </p>
-          )}
-        </div>
-      ))}
+        const cleanItem = removeTechnicalFields(item) ?? {};
+        const name =
+          formatValue('name', cleanItem.name) !== 'Não informado'
+            ? formatValue('name', cleanItem.name)
+            : `${titlePrefix} ${index + 1}`;
+
+        return (
+          <div
+            key={index}
+            className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+          >
+            <div className="mb-4 flex flex-col gap-1 border-b border-slate-100 pb-3">
+              <p className="text-sm font-semibold text-slate-900">{name}</p>
+
+              {'model' in cleanItem && (
+                <p className="text-xs text-slate-500">
+                  {formatValue('model', cleanItem.model)}
+                </p>
+              )}
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {Object.entries(cleanItem)
+                .filter(([key]) => key !== 'name')
+                .map(([key, value]) => (
+                  <InfoItem
+                    key={key}
+                    label={humanizeKey(key)}
+                    value={formatValue(key, value)}
+                  />
+                ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function StorageSection({ storage }: { storage?: Record<string, unknown> }) {
+  const storageInventory = storage as StorageInventory | undefined;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h4 className="mb-3 text-sm font-semibold text-slate-800">Resumo</h4>
+        <ObjectGrid data={storageInventory?.summary} />
+      </div>
+
+      <div>
+        <h4 className="mb-3 text-sm font-semibold text-slate-800">
+          Discos físicos
+        </h4>
+        <ArrayCards
+          data={storageInventory?.physical_disks}
+          titlePrefix="Disco"
+        />
+      </div>
+
+      <div>
+        <h4 className="mb-3 text-sm font-semibold text-slate-800">
+          Volumes e partições
+        </h4>
+        <ArrayCards data={storageInventory?.volumes} titlePrefix="Volume" />
+      </div>
+    </div>
+  );
+}
+
+function NetworkSection({ network }: { network?: Record<string, unknown> }) {
+  const networkInventory = network as NetworkInventory | undefined;
+
+  return (
+    <div className="space-y-6">
+      <ObjectGrid
+        data={{
+          adapter_count: networkInventory?.adapter_count,
+        }}
+      />
+
+      <ArrayCards
+        data={networkInventory?.adapters}
+        titlePrefix="Adaptador"
+      />
     </div>
   );
 }
@@ -230,18 +533,18 @@ export default async function HardwareInventoryPage({
 
   const basicIdentification = {
     hostname: device.name,
-    cliente: activeCustomer.customerName,
+    client: activeCustomer.customerName,
     site: device.site,
-    sistema_operacional: device.operatingSystem,
-    fabricante: device.manufacturer,
-    modelo: device.model,
-    serial: device.serialNumber,
-    ultimo_check_in: device.lastSeen,
-    ultimo_inventario: device.lastInventoryAt,
+    operating_system: device.operatingSystem,
+    manufacturer: device.manufacturer,
+    model: device.model,
+    serial_number: device.serialNumber,
+    last_seen_at: device.lastSeen,
+    last_inventory_at: device.lastInventoryAt,
   };
 
   const basicHardware = {
-    cpu: device.cpu,
+    name: device.cpu,
     memoria_ram_gb: device.ramGb,
     disco_total_gb: device.diskTotalGb,
   };
@@ -270,9 +573,14 @@ export default async function HardwareInventoryPage({
                 </h2>
 
                 <p className="mt-1 text-sm text-slate-600">
-                  Visão técnica detalhada do equipamento. Esta tela será
-                  enriquecida conforme o SafeOps Sync passar a coletar dados
-                  completos de hardware, rede, armazenamento e adaptadores.
+                  Visão técnica detalhada do equipamento, incluindo hardware,
+                  armazenamento, rede, vídeo e dados brutos de inventário.
+                </p>
+
+                <p className="mt-1 text-xs text-slate-500">
+                  Fonte:{' '}
+                  {device.inventorySource ?? 'SafeOps Inventory Sync'} • Versão:{' '}
+                  {device.inventoryVersion ?? 'Não informada'}
                 </p>
               </div>
             </div>
@@ -295,10 +603,9 @@ export default async function HardwareInventoryPage({
 
           <p className="mt-2 text-sm leading-relaxed text-amber-800">
             O SafeOps Manager ainda possui apenas o resumo principal deste
-            equipamento. Quando o campo de inventário detalhado for habilitado
-            no banco e preenchido pelo script de sincronização, esta página
-            exibirá informações completas de discos, rede, GPU, volumes e demais
-            componentes.
+            equipamento. Quando o campo de inventário detalhado for preenchido
+            pelo script de sincronização, esta página exibirá informações
+            completas de discos, rede, GPU, volumes e demais componentes.
           </p>
         </div>
       )}
@@ -318,34 +625,48 @@ export default async function HardwareInventoryPage({
         description="Resumo de CPU, núcleos, threads e memória RAM quando disponível."
         defaultOpen
       >
-        <div className="space-y-4">
-          <ObjectGrid data={hardwareInventory?.cpu ?? basicHardware} />
+        <div className="space-y-6">
+          <div>
+            <h4 className="mb-3 text-sm font-semibold text-slate-800">
+              Processador
+            </h4>
+            <ObjectGrid data={hardwareInventory?.cpu ?? basicHardware} />
+          </div>
 
-          {hardwareInventory?.memory && (
-            <ObjectGrid data={hardwareInventory.memory} />
-          )}
+          <div>
+            <h4 className="mb-3 text-sm font-semibold text-slate-800">
+              Memória
+            </h4>
+            <ObjectGrid data={hardwareInventory?.memory} />
+          </div>
         </div>
       </InventorySection>
 
       <InventorySection
-        title="Armazenamento físico"
-        description="Discos físicos, SSDs, NVMes, seriais, interfaces e status quando disponíveis."
+        title="Armazenamento"
+        description="Discos físicos, SSDs, NVMes, volumes, partições e uso de espaço."
+        defaultOpen
       >
-        <ObjectGrid data={hardwareInventory?.storage} />
+        <StorageSection data={hardwareInventory?.storage} />
       </InventorySection>
 
       <InventorySection
         title="Rede"
-        description="Adaptadores de rede, endereços IP, MAC, gateways, DNS e status dos links."
+        description="Adaptadores de rede, MAC, velocidade, IPs, gateways e DNS quando disponíveis."
+        defaultOpen
       >
-        <ObjectGrid data={hardwareInventory?.network} />
+        <NetworkSection data={hardwareInventory?.network} />
       </InventorySection>
 
       <InventorySection
         title="Adaptadores gráficos"
         description="Placas de vídeo, drivers e memória gráfica quando disponíveis."
+        defaultOpen
       >
-        <ArrayList data={hardwareInventory?.graphics} />
+        <ArrayCards
+          data={hardwareInventory?.graphics}
+          titlePrefix="Adaptador gráfico"
+        />
       </InventorySection>
 
       <InventorySection
@@ -357,7 +678,7 @@ export default async function HardwareInventoryPage({
 
       <InventorySection
         title="Dados brutos do inventário"
-        description="Representação técnica completa do inventário recebido pelo SafeOps Manager."
+        description="Representação técnica completa do inventário recebido pelo SafeOps Manager. Use esta seção apenas para debug/auditoria."
       >
         {hardwareInventory ? (
           <RawJsonBlock data={hardwareInventory} />
