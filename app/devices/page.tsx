@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { resolveCurrentCustomer } from '@/lib/data/get-current-customer';
 import { getDevices, type DeviceListItem } from '@/lib/data/get-devices';
 import { DEMO_DEVICES, type OperationalStatus } from '@/lib/demo-data';
+import { RefreshDevicesButton } from "@/components/devices/RefreshDevicesButton";
 
 export const dynamic = 'force-dynamic';
 
