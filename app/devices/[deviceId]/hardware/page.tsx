@@ -187,7 +187,7 @@ function translateConnectionStatus(value: unknown): string {
     OK: 'OK',
   };
 
-  return statusMap[normalized] ?? normalized || 'Não informado';
+  return statusMap[normalized] ?? (normalized || 'Não informado');
 }
 
 function formatValue(key: string, value: unknown): string {
