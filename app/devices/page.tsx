@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { DataTable } from '@/components/DataTable';
@@ -7,7 +8,6 @@ import { resolveCurrentCustomer } from '@/lib/data/get-current-customer';
 import { getDevices } from '@/lib/data/get-devices';
 import {
   DEMO_DEVICES,
-  type DemoDevice,
   type OperationalStatus,
 } from '@/lib/demo-data';
 
@@ -46,6 +46,23 @@ function StatusBadge({ status }: { status: OperationalStatus }) {
   );
 }
 
+function formatHardwareSummary(
+  ramGb?: number | null,
+  diskTotalGb?: number | null,
+): string {
+  const parts: string[] = [];
+
+  if (ramGb) {
+    parts.push(`${ramGb} GB RAM`);
+  }
+
+  if (diskTotalGb) {
+    parts.push(`${diskTotalGb} GB disco`);
+  }
+
+  return parts.length > 0 ? parts.join(' • ') : 'Hardware não informado';
+}
+
 export default async function DevicesPage({ searchParams }: DevicesPageProps) {
   const params = searchParams ? await searchParams : {};
   const customerContext = await resolveCurrentCustomer(params.customerId);
@@ -71,7 +88,7 @@ export default async function DevicesPage({ searchParams }: DevicesPageProps) {
 
   const isDemoCustomer = activeCustomer.customerSlug === 'safesys-demo';
 
-  const realDevices: DemoDevice[] = await getDevices(activeCustomer.customerId);
+  const realDevices = await getDevices(activeCustomer.customerId);
   const list =
     isDemoCustomer && realDevices.length === 0 ? DEMO_DEVICES : realDevices;
 
@@ -98,41 +115,65 @@ export default async function DevicesPage({ searchParams }: DevicesPageProps) {
             'Local',
             'Status',
             'Sistema operacional',
+            'Hardware',
             'Último check-in',
             'Alertas ativos',
           ]}
         >
-          {list.map((device) => (
-            <tr key={device.id} className="text-slate-700">
-              <td className="px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <DevicePlatformIcon
-                    operatingSystem={device.operatingSystem}
-                    deviceName={device.name}
-                  />
+          {list.map((device) => {
+            const href = `/devices/${device.id}?customerId=${encodeURIComponent(
+              activeCustomer.customerId,
+            )}`;
 
-                  <div>
-                    <p className="font-medium text-slate-800">{device.name}</p>
-                    <p className="text-xs text-slate-500">
-                      {device.operatingSystem || 'Sistema não identificado'}
-                    </p>
+            return (
+              <tr key={device.id} className="text-slate-700">
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <DevicePlatformIcon
+                      operatingSystem={device.operatingSystem}
+                      deviceName={device.name}
+                    />
+
+                    <div>
+                      <Link
+                        href={href}
+                        className="font-semibold text-brand-900 transition hover:text-brand-700 hover:underline"
+                      >
+                        {device.name}
+                      </Link>
+
+                      <p className="text-xs text-slate-500">
+                        {'manufacturer' in device &&
+                        (device.manufacturer || device.model)
+                          ? [device.manufacturer, device.model]
+                              .filter(Boolean)
+                              .join(' • ')
+                          : device.operatingSystem || 'Sistema não identificado'}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              </td>
+                </td>
 
-              <td className="px-4 py-3">{device.site}</td>
+                <td className="px-4 py-3">{device.site}</td>
 
-              <td className="px-4 py-3">
-                <StatusBadge status={device.status} />
-              </td>
+                <td className="px-4 py-3">
+                  <StatusBadge status={device.status} />
+                </td>
 
-              <td className="px-4 py-3">{device.operatingSystem}</td>
+                <td className="px-4 py-3">{device.operatingSystem}</td>
 
-              <td className="px-4 py-3">{device.lastSeen}</td>
+                <td className="px-4 py-3 text-sm">
+                  {'ramGb' in device || 'diskTotalGb' in device
+                    ? formatHardwareSummary(device.ramGb, device.diskTotalGb)
+                    : 'Hardware não informado'}
+                </td>
 
-              <td className="px-4 py-3">{device.activeAlerts}</td>
-            </tr>
-          ))}
+                <td className="px-4 py-3">{device.lastSeen}</td>
+
+                <td className="px-4 py-3">{device.activeAlerts}</td>
+              </tr>
+            );
+          })}
         </DataTable>
       )}
     </section>
