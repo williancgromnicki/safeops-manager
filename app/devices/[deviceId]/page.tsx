@@ -6,10 +6,10 @@ import { DevicePlatformIcon } from '@/components/DevicePlatformIcon';
 import { EmptyState } from '@/components/EmptyState';
 import { SeverityBadge } from '@/components/SeverityBadge';
 import { StatCard } from '@/components/StatCard';
-import { StatusBadge } from '@/components/StatusBadge';
 import { getDeviceAlerts } from '@/lib/data/get-device-alerts';
 import { getDeviceDetail } from '@/lib/data/get-device-detail';
 import { resolveCurrentCustomer } from '@/lib/data/get-current-customer';
+import { type OperationalStatus } from '@/lib/demo-data';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,16 +22,35 @@ type DeviceDetailPageProps = {
   }>;
 };
 
-function translateAlertStatus(status?: string | null): string {
-  return status?.toLowerCase() === 'closed' ? 'Fechado' : 'Aberto';
+const deviceStatusLabel: Record<OperationalStatus, string> = {
+  online: 'Online',
+  offline: 'Offline',
+  attention: 'Atenção',
+  unknown: 'Desconhecido',
+};
+
+const deviceStatusClassName: Record<OperationalStatus, string> = {
+  online: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
+  offline: 'bg-rose-50 text-rose-700 ring-rose-600/20',
+  attention: 'bg-amber-50 text-amber-700 ring-amber-600/20',
+  unknown: 'bg-slate-50 text-slate-700 ring-slate-600/20',
+};
+
+function DeviceStatusBadge({ status }: { status: OperationalStatus }) {
+  return (
+    <span
+      className={[
+        'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset',
+        deviceStatusClassName[status],
+      ].join(' ')}
+    >
+      {deviceStatusLabel[status]}
+    </span>
+  );
 }
 
-function translateDeviceStatus(status: string): string {
-  if (status === 'online') return 'Online';
-  if (status === 'offline') return 'Offline';
-  if (status === 'attention') return 'Atenção';
-
-  return 'Desconhecido';
+function translateAlertStatus(status?: string | null): string {
+  return status?.toLowerCase() === 'closed' ? 'Fechado' : 'Aberto';
 }
 
 function formatNumber(value: number | null, suffix: string): string {
@@ -123,14 +142,14 @@ export default async function DeviceDetailPage({
             </div>
           </div>
 
-          <StatusBadge status={device.status} />
+          <DeviceStatusBadge status={device.status} />
         </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Status"
-          value={translateDeviceStatus(device.status)}
+          value={deviceStatusLabel[device.status]}
           helper={<span className="text-xs text-slate-500">Estado atual</span>}
         />
 
