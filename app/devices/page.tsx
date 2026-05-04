@@ -5,11 +5,8 @@ import { DataTable } from '@/components/DataTable';
 import { DevicePlatformIcon } from '@/components/DevicePlatformIcon';
 import { EmptyState } from '@/components/EmptyState';
 import { resolveCurrentCustomer } from '@/lib/data/get-current-customer';
-import { getDevices } from '@/lib/data/get-devices';
-import {
-  DEMO_DEVICES,
-  type OperationalStatus,
-} from '@/lib/demo-data';
+import { getDevices, type DeviceListItem } from '@/lib/data/get-devices';
+import { DEMO_DEVICES, type OperationalStatus } from '@/lib/demo-data';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,6 +60,26 @@ function formatHardwareSummary(
   return parts.length > 0 ? parts.join(' • ') : 'Hardware não informado';
 }
 
+function mapDemoDeviceToListItem(device: (typeof DEMO_DEVICES)[number]): DeviceListItem {
+  return {
+    id: device.id,
+    customerId: device.customerId,
+    name: device.name,
+    site: device.site,
+    status: device.status,
+    operatingSystem: device.operatingSystem,
+    lastSeen: device.lastSeen,
+    activeAlerts: device.activeAlerts,
+    manufacturer: null,
+    model: null,
+    serialNumber: null,
+    cpu: null,
+    ramGb: null,
+    diskTotalGb: null,
+    lastInventoryAt: null,
+  };
+}
+
 export default async function DevicesPage({ searchParams }: DevicesPageProps) {
   const params = searchParams ? await searchParams : {};
   const customerContext = await resolveCurrentCustomer(params.customerId);
@@ -89,8 +106,10 @@ export default async function DevicesPage({ searchParams }: DevicesPageProps) {
   const isDemoCustomer = activeCustomer.customerSlug === 'safesys-demo';
 
   const realDevices = await getDevices(activeCustomer.customerId);
-  const list =
-    isDemoCustomer && realDevices.length === 0 ? DEMO_DEVICES : realDevices;
+  const list: DeviceListItem[] =
+    isDemoCustomer && realDevices.length === 0
+      ? DEMO_DEVICES.map(mapDemoDeviceToListItem)
+      : realDevices;
 
   return (
     <section className="space-y-6">
@@ -125,6 +144,11 @@ export default async function DevicesPage({ searchParams }: DevicesPageProps) {
               activeCustomer.customerId,
             )}`;
 
+            const deviceSubtitle =
+              device.manufacturer || device.model
+                ? [device.manufacturer, device.model].filter(Boolean).join(' • ')
+                : device.operatingSystem || 'Sistema não identificado';
+
             return (
               <tr key={device.id} className="text-slate-700">
                 <td className="px-4 py-3">
@@ -143,12 +167,7 @@ export default async function DevicesPage({ searchParams }: DevicesPageProps) {
                       </Link>
 
                       <p className="text-xs text-slate-500">
-                        {'manufacturer' in device &&
-                        (device.manufacturer || device.model)
-                          ? [device.manufacturer, device.model]
-                              .filter(Boolean)
-                              .join(' • ')
-                          : device.operatingSystem || 'Sistema não identificado'}
+                        {deviceSubtitle}
                       </p>
                     </div>
                   </div>
@@ -163,9 +182,7 @@ export default async function DevicesPage({ searchParams }: DevicesPageProps) {
                 <td className="px-4 py-3">{device.operatingSystem}</td>
 
                 <td className="px-4 py-3 text-sm">
-                  {'ramGb' in device || 'diskTotalGb' in device
-                    ? formatHardwareSummary(device.ramGb, device.diskTotalGb)
-                    : 'Hardware não informado'}
+                  {formatHardwareSummary(device.ramGb, device.diskTotalGb)}
                 </td>
 
                 <td className="px-4 py-3">{device.lastSeen}</td>
