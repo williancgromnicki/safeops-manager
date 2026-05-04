@@ -4,10 +4,10 @@ import { redirect } from 'next/navigation';
 import { DataTable } from '@/components/DataTable';
 import { DevicePlatformIcon } from '@/components/DevicePlatformIcon';
 import { EmptyState } from '@/components/EmptyState';
+import { RefreshDevicesButton } from '@/components/devices/RefreshDevicesButton';
 import { resolveCurrentCustomer } from '@/lib/data/get-current-customer';
 import { getDevices, type DeviceListItem } from '@/lib/data/get-devices';
 import { DEMO_DEVICES, type OperationalStatus } from '@/lib/demo-data';
-import { RefreshDevicesButton } from "@/components/devices/RefreshDevicesButton";
 
 export const dynamic = 'force-dynamic';
 
@@ -61,7 +61,9 @@ function formatHardwareSummary(
   return parts.length > 0 ? parts.join(' • ') : 'Hardware não informado';
 }
 
-function mapDemoDeviceToListItem(device: (typeof DEMO_DEVICES)[number]): DeviceListItem {
+function mapDemoDeviceToListItem(
+  device: (typeof DEMO_DEVICES)[number],
+): DeviceListItem {
   return {
     id: device.id,
     customerId: device.customerId,
@@ -94,7 +96,13 @@ export default async function DevicesPage({ searchParams }: DevicesPageProps) {
   if (!activeCustomer) {
     return (
       <section className="space-y-6">
-        <h2 className="section-title">Dispositivos</h2>
+        <div>
+          <h2 className="section-title">Dispositivos</h2>
+
+          <p className="mt-2 text-sm text-slate-600">
+            Inventário operacional dos clientes vinculados ao seu usuário.
+          </p>
+        </div>
 
         <EmptyState
           title="Nenhum cliente vinculado"
@@ -114,13 +122,26 @@ export default async function DevicesPage({ searchParams }: DevicesPageProps) {
 
   return (
     <section className="space-y-6">
-      <div>
-        <h2 className="section-title">
-          Dispositivos - {activeCustomer.customerName}
-        </h2>
-        <p className="mt-2 text-sm text-slate-600">
-          Inventário operacional do cliente selecionado.
-        </p>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h2 className="section-title">
+            Dispositivos - {activeCustomer.customerName}
+          </h2>
+
+          <p className="mt-2 text-sm text-slate-600">
+            Inventário operacional sincronizado com o Tactical RMM. O status
+            online/offline considera o último check-in registrado pelo agente.
+          </p>
+
+          <p className="mt-1 text-xs text-slate-500">
+            A sincronização automática ocorre a cada 5 minutos. O botão ao lado
+            permite forçar uma atualização manual do inventário.
+          </p>
+        </div>
+
+        <div className="shrink-0">
+          <RefreshDevicesButton />
+        </div>
       </div>
 
       {list.length === 0 ? (
