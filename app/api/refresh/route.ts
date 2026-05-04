@@ -2,6 +2,18 @@ import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (typeof error === "string") {
+    return error;
+  }
+
+  return "Erro desconhecido ao executar refresh de inventário.";
+}
+
 export async function POST() {
   try {
     const runnerUrl = process.env.SAFEOPS_SYNC_RUNNER_URL;
@@ -11,7 +23,7 @@ export async function POST() {
       return NextResponse.json(
         {
           ok: false,
-          error: "Sync runner não configurado no ambiente."
+          error: "Sync runner não configurado no ambiente.",
         },
         { status: 500 }
       );
@@ -20,21 +32,30 @@ export async function POST() {
     const response = await fetch(runnerUrl, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${runnerToken}`
+        Authorization: `Bearer ${runnerToken}`,
       },
-      cache: "no-store"
+      cache: "no-store",
     });
 
-    const data = await response.json();
+    let data: unknown;
+
+    try {
+      data = await response.json();
+    } catch {
+      data = {
+        ok: false,
+        error: "Resposta inválida do sync runner.",
+      };
+    }
 
     return NextResponse.json(data, {
-      status: response.ok ? 200 : response.status
+      status: response.ok ? 200 : response.status,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return NextResponse.json(
       {
         ok: false,
-        error: error?.message || "Erro ao executar refresh de inventário."
+        error: getErrorMessage(error),
       },
       { status: 500 }
     );
