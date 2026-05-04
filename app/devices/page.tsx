@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 import { DataTable } from '@/components/DataTable';
 import { DevicePlatformIcon } from '@/components/DevicePlatformIcon';
 import { EmptyState } from '@/components/EmptyState';
-import { RefreshDevicesButton } from '@/components/devices/RefreshDevicesButton';
+import { RefreshDevicesButton } from '@/components/RefreshDevicesButton';
 import { resolveCurrentCustomer } from '@/lib/data/get-current-customer';
 import { getDevices, type DeviceListItem } from '@/lib/data/get-devices';
 import { DEMO_DEVICES, type OperationalStatus } from '@/lib/demo-data';
