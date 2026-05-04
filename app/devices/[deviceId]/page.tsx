@@ -26,6 +26,14 @@ function translateAlertStatus(status?: string | null): string {
   return status?.toLowerCase() === 'closed' ? 'Fechado' : 'Aberto';
 }
 
+function translateDeviceStatus(status: string): string {
+  if (status === 'online') return 'Online';
+  if (status === 'offline') return 'Offline';
+  if (status === 'attention') return 'Atenção';
+
+  return 'Desconhecido';
+}
+
 function formatNumber(value: number | null, suffix: string): string {
   if (value === null || value === undefined) {
     return 'Não informado';
@@ -115,32 +123,14 @@ export default async function DeviceDetailPage({
             </div>
           </div>
 
-          <StatusBadge
-            status={
-              device.status === 'online'
-                ? 'Saudável'
-                : device.status === 'offline'
-                  ? 'Crítico'
-                  : device.status === 'attention'
-                    ? 'Atenção'
-                    : 'Desconhecido'
-            }
-          />
+          <StatusBadge status={device.status} />
         </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Status"
-          value={
-            device.status === 'online'
-              ? 'Online'
-              : device.status === 'offline'
-                ? 'Offline'
-                : device.status === 'attention'
-                  ? 'Atenção'
-                  : 'Desconhecido'
-          }
+          value={translateDeviceStatus(device.status)}
           helper={<span className="text-xs text-slate-500">Estado atual</span>}
         />
 
@@ -248,7 +238,7 @@ export default async function DeviceDetailPage({
             >
               {alerts.map((alert) => (
                 <tr key={alert.id} className="align-top text-slate-700">
-                  <td className="px-4 py-3 whitespace-nowrap text-sm">
+                  <td className="whitespace-nowrap px-4 py-3 text-sm">
                     {alert.lastSeenAt !== '—'
                       ? alert.lastSeenAt
                       : alert.occurredAt}
@@ -279,7 +269,7 @@ export default async function DeviceDetailPage({
                     {alert.occurrenceCount}
                   </td>
 
-                  <td className="px-4 py-3 whitespace-nowrap text-sm">
+                  <td className="whitespace-nowrap px-4 py-3 text-sm">
                     {alert.resolvedAt}
                   </td>
                 </tr>
