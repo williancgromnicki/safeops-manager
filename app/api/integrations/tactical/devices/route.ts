@@ -3,6 +3,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { slugify } from '@/lib/integrations/normalize-alert';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
 
+type JsonPrimitive = string | number | boolean | null;
+type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
+type JsonObject = {
+  [key: string]: JsonValue;
+};
+
 type IncomingDevice = {
   tactical_agent_id?: string | null;
   hostname?: string | null;
@@ -16,6 +22,9 @@ type IncomingDevice = {
   cpu?: string | null;
   ram_gb?: number | string | null;
   disk_total_gb?: number | string | null;
+  hardware_inventory?: JsonObject | null;
+  inventory_source?: string | null;
+  inventory_version?: string | null;
 };
 
 type IncomingPayload = {
@@ -95,6 +104,99 @@ function parseNumber(value?: number | string | null): number | null {
   }
 
   return parsed;
+}
+
+function isJsonObject(value: unknown): value is JsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function normalizeHardwareInventory(
+  incomingDevice: IncomingDevice,
+  clientName: string,
+  site: string | null,
+  lastSeenAt: string | null,
+): JsonObject {
+  const providedInventory = isJsonObject(incomingDevice.hardware_inventory)
+    ? incomingDevice.hardware_inventory
+    : {};
+
+  const identification =
+    isJsonObject(providedInventory.identification)
+      ? providedInventory.identification
+      : {};
+
+  const cpu = isJsonObject(providedInventory.cpu) ? providedInventory.cpu : {};
+  const memory = isJsonObject(providedInventory.memory)
+    ? providedInventory.memory
+    : {};
+  const storage = isJsonObject(providedInventory.storage)
+    ? providedInventory.storage
+    : {};
+  const network = isJsonObject(providedInventory.network)
+    ? providedInventory.network
+    : {};
+  const operatingSystem = isJsonObject(providedInventory.operatingSystem)
+    ? providedInventory.operatingSystem
+    : {};
+
+  const graphics = Array.isArray(providedInventory.graphics)
+    ? providedInventory.graphics
+    : [];
+
+  const hostname = cleanString(incomingDevice.hostname);
+  const manufacturer = cleanString(incomingDevice.manufacturer);
+  const model = cleanString(incomingDevice.model);
+  const serialNumber = cleanString(incomingDevice.serial_number);
+  const operatingSystemName = cleanString(incomingDevice.operating_system);
+  const cpuName = cleanString(incomingDevice.cpu);
+  const ramGb = parseNumber(incomingDevice.ram_gb);
+  const diskTotalGb = parseNumber(incomingDevice.disk_total_gb);
+
+  return {
+    ...providedInventory,
+
+    identification: {
+      hostname,
+      client: clientName,
+      site,
+      manufacturer,
+      model,
+      serial_number: serialNumber,
+      last_seen_at: lastSeenAt,
+      ...identification,
+    },
+
+    cpu: {
+      name: cpuName,
+      ...cpu,
+    },
+
+    memory: {
+      total_gb: ramGb,
+      ...memory,
+    },
+
+    storage: {
+      summary: {
+        total_gb: diskTotalGb,
+      },
+      physical_disks: [],
+      volumes: [],
+      ...storage,
+    },
+
+    network: {
+      adapters: [],
+      ...network,
+    },
+
+    graphics,
+
+    operatingSystem: {
+      name: operatingSystemName,
+      ...operatingSystem,
+    },
+  };
 }
 
 function normalizeDeviceStatus(status?: string | null): DeviceStatus {
@@ -780,6 +882,13 @@ export async function POST(request: NextRequest) {
       const lastSeenAt = parseDate(incomingDevice.last_seen_at);
       const site = cleanString(incomingDevice.site) ?? cleanString(payload.site);
 
+      const hardwareInventory = normalizeHardwareInventory(
+        incomingDevice,
+        clientName,
+        site,
+        lastSeenAt,
+      );
+
       const deviceData = {
         customer_id: customerId,
         tactical_agent_id: tacticalAgentId,
@@ -795,6 +904,12 @@ export async function POST(request: NextRequest) {
         cpu: cleanString(incomingDevice.cpu),
         ram_gb: parseNumber(incomingDevice.ram_gb),
         disk_total_gb: parseNumber(incomingDevice.disk_total_gb),
+        hardware_inventory: hardwareInventory,
+        inventory_source:
+          cleanString(incomingDevice.inventory_source) ??
+          'SafeOps Inventory Sync',
+        inventory_version:
+          cleanString(incomingDevice.inventory_version) ?? '1.0',
         last_inventory_at: now,
       };
 
