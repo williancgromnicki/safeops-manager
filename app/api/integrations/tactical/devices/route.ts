@@ -25,6 +25,7 @@ type IncomingPayload = {
 };
 
 type DeviceStatus = 'online' | 'offline' | 'attention' | 'unknown';
+type AlertSeverity = 'INFO' | 'WARN' | 'CRIT';
 
 type ExistingDeviceRow = {
   id: string;
@@ -47,7 +48,7 @@ type AvailabilityAlertResult = {
 
 type EmailNotification = {
   kind: 'offline_created' | 'offline_recovered';
-  severity: 'INFO' | 'WARN' | 'CRIT';
+  severity: AlertSeverity;
   subject: string;
   body: string;
   recipients: string[];
@@ -136,6 +137,60 @@ function buildOfflineAlertDetails(input: {
     `Site: ${input.site ?? 'Não informado'}.`,
     `Último check-in: ${formatLastSeenForDetails(input.lastSeenAt)}.`,
     'Critério atual: dispositivo sem check-in dentro do limite configurado no sync de inventário.',
+  ].join('\n');
+}
+
+function buildOfflineEmailSubject(input: {
+  hostname: string;
+  clientName: string;
+}): string {
+  return `[SafeOps][CRIT] Dispositivo offline - ${input.hostname} - ${input.clientName}`;
+}
+
+function buildOfflineEmailBody(input: {
+  hostname: string;
+  clientName: string;
+  site: string | null;
+  lastSeenAt: string | null;
+  details: string;
+}): string {
+  return [
+    'Alerta crítico de disponibilidade detectado pelo SafeOps Manager.',
+    '',
+    `Cliente: ${input.clientName}`,
+    `Dispositivo: ${input.hostname}`,
+    `Site: ${input.site ?? 'Não informado'}`,
+    `Último check-in: ${formatLastSeenForDetails(input.lastSeenAt)}`,
+    '',
+    'Detalhes:',
+    input.details,
+    '',
+    'Critério atual: dispositivo sem check-in há mais de 15 minutos no inventário sincronizado do TRMM.',
+  ].join('\n');
+}
+
+function buildRecoveryEmailSubject(input: {
+  hostname: string;
+  clientName: string;
+}): string {
+  return `[SafeOps][OK] Dispositivo voltou online - ${input.hostname} - ${input.clientName}`;
+}
+
+function buildRecoveryEmailBody(input: {
+  hostname: string;
+  clientName: string;
+  site: string | null;
+  lastSeenAt: string | null;
+}): string {
+  return [
+    'Recuperação de disponibilidade detectada pelo SafeOps Manager.',
+    '',
+    `Cliente: ${input.clientName}`,
+    `Dispositivo: ${input.hostname}`,
+    `Site: ${input.site ?? 'Não informado'}`,
+    `Último check-in: ${formatLastSeenForDetails(input.lastSeenAt)}`,
+    '',
+    'O alerta automático de dispositivo offline foi encerrado porque o equipamento voltou a aparecer como online no inventário sincronizado do TRMM.',
   ].join('\n');
 }
 
@@ -292,6 +347,39 @@ async function findOpenOfflineAlert(
   return data as OpenAlertRow | null;
 }
 
+async function getAlertRecipients(
+  supabaseAdmin: ReturnType<typeof getSupabaseAdmin>,
+  customerId: string,
+  severity: AlertSeverity,
+): Promise<string[]> {
+  const { data: activeContacts, error } = await supabaseAdmin
+    .from('customer_alert_contacts')
+    .select('email, receives_info, receives_warn, receives_crit')
+    .eq('customer_id', customerId)
+    .eq('is_active', true);
+
+  if (error) {
+    throw new Error(`Erro ao buscar contatos de alerta: ${error.message}`);
+  }
+
+  const filteredContactEmails = (activeContacts ?? [])
+    .filter((contact) => {
+      if (severity === 'INFO') return contact.receives_info === true;
+      if (severity === 'WARN') return contact.receives_warn === true;
+
+      return contact.receives_crit === true;
+    })
+    .map((contact) => contact.email);
+
+  return Array.from(
+    new Set(
+      [...filteredContactEmails, 'suporte@safesys.net.br']
+        .map((email) => email?.trim().toLowerCase())
+        .filter((email): email is string => Boolean(email)),
+    ),
+  );
+}
+
 async function createOrUpdateOfflineAlert(input: {
   supabaseAdmin: ReturnType<typeof getSupabaseAdmin>;
   customerId: string;
@@ -353,23 +441,28 @@ async function createOrUpdateOfflineAlert(input: {
       created: 0,
       updated: 1,
       closed: 0,
+      alertId: existingAlert.id,
     };
   }
 
-  const { error } = await supabaseAdmin.from('alerts').insert({
-    customer_id: customerId,
-    device_id: deviceId,
-    source: 'SafeOps Inventory Sync',
-    alert_type: OFFLINE_ALERT_TYPE,
-    severity: 'CRIT',
-    title: OFFLINE_ALERT_TITLE,
-    details,
-    status: 'open',
-    occurred_at: now,
-    occurrence_count: 1,
-    last_seen_at: now,
-    resolved_at: null,
-  });
+  const { data: createdAlert, error } = await supabaseAdmin
+    .from('alerts')
+    .insert({
+      customer_id: customerId,
+      device_id: deviceId,
+      source: 'SafeOps Inventory Sync',
+      alert_type: OFFLINE_ALERT_TYPE,
+      severity: 'CRIT',
+      title: OFFLINE_ALERT_TITLE,
+      details,
+      status: 'open',
+      occurred_at: now,
+      occurrence_count: 1,
+      last_seen_at: now,
+      resolved_at: null,
+    })
+    .select('id')
+    .single();
 
   if (error) {
     throw new Error(`Erro ao criar alerta offline: ${error.message}`);
@@ -379,6 +472,7 @@ async function createOrUpdateOfflineAlert(input: {
     created: 1,
     updated: 0,
     closed: 0,
+    alertId: createdAlert.id as string,
   };
 }
 
@@ -422,6 +516,7 @@ async function closeOfflineAlert(input: {
     created: 0,
     updated: 0,
     closed: 1,
+    alertId: existingAlert.id,
   };
 }
 
@@ -510,6 +605,94 @@ async function handleAvailabilityAlert(input: {
   };
 }
 
+async function buildEmailNotification(input: {
+  supabaseAdmin: ReturnType<typeof getSupabaseAdmin>;
+  customerId: string;
+  deviceId: string;
+  alertId?: string;
+  hostname: string;
+  clientName: string;
+  site: string | null;
+  lastSeenAt: string | null;
+  availabilityAlert: AvailabilityAlertResult;
+}): Promise<EmailNotification | null> {
+  const {
+    supabaseAdmin,
+    customerId,
+    deviceId,
+    alertId,
+    hostname,
+    clientName,
+    site,
+    lastSeenAt,
+    availabilityAlert,
+  } = input;
+
+  if (availabilityAlert.created > 0) {
+    const recipients = await getAlertRecipients(
+      supabaseAdmin,
+      customerId,
+      'CRIT',
+    );
+
+    const details = buildOfflineAlertDetails({
+      hostname,
+      clientName,
+      site,
+      lastSeenAt,
+    });
+
+    return {
+      kind: 'offline_created',
+      severity: 'CRIT',
+      subject: buildOfflineEmailSubject({
+        hostname,
+        clientName,
+      }),
+      body: buildOfflineEmailBody({
+        hostname,
+        clientName,
+        site,
+        lastSeenAt,
+        details,
+      }),
+      recipients,
+      customerId,
+      deviceId,
+      alertId,
+    };
+  }
+
+  if (availabilityAlert.closed > 0) {
+    const recipients = await getAlertRecipients(
+      supabaseAdmin,
+      customerId,
+      'INFO',
+    );
+
+    return {
+      kind: 'offline_recovered',
+      severity: 'INFO',
+      subject: buildRecoveryEmailSubject({
+        hostname,
+        clientName,
+      }),
+      body: buildRecoveryEmailBody({
+        hostname,
+        clientName,
+        site,
+        lastSeenAt,
+      }),
+      recipients,
+      customerId,
+      deviceId,
+      alertId,
+    };
+  }
+
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   const token = request.headers.get('x-safeops-webhook-token');
   const supabaseAdmin = getSupabaseAdmin();
@@ -557,6 +740,8 @@ export async function POST(request: NextRequest) {
     let alertsCreated = 0;
     let alertsUpdated = 0;
     let alertsClosed = 0;
+
+    const emailNotifications: EmailNotification[] = [];
 
     const deviceResults: Array<{
       hostname: string;
@@ -625,10 +810,12 @@ export async function POST(request: NextRequest) {
           throw new Error(`Erro ao atualizar ${hostname}: ${updateError.message}`);
         }
 
+        const deviceId = updatedDevice.id as string;
+
         const availabilityAlert = await handleAvailabilityAlert({
           supabaseAdmin,
           customerId,
-          deviceId: updatedDevice.id as string,
+          deviceId,
           hostname,
           clientName,
           site,
@@ -641,16 +828,32 @@ export async function POST(request: NextRequest) {
         alertsUpdated += availabilityAlert.updated;
         alertsClosed += availabilityAlert.closed;
 
+        const emailNotification = await buildEmailNotification({
+          supabaseAdmin,
+          customerId,
+          deviceId,
+          alertId: availabilityAlert.alertId,
+          hostname,
+          clientName,
+          site,
+          lastSeenAt,
+          availabilityAlert,
+        });
+
+        if (emailNotification) {
+          emailNotifications.push(emailNotification);
+        }
+
         const activeAlerts = await refreshDeviceActiveAlerts(
           supabaseAdmin,
-          updatedDevice.id as string,
+          deviceId,
         );
 
         updated += 1;
         deviceResults.push({
           hostname,
           action: 'updated',
-          id: updatedDevice.id as string,
+          id: deviceId,
           status: nextStatus,
           activeAlerts,
           availabilityAlert,
@@ -672,10 +875,12 @@ export async function POST(request: NextRequest) {
         throw new Error(`Erro ao criar ${hostname}: ${createError.message}`);
       }
 
+      const deviceId = createdDevice.id as string;
+
       const availabilityAlert = await handleAvailabilityAlert({
         supabaseAdmin,
         customerId,
-        deviceId: createdDevice.id as string,
+        deviceId,
         hostname,
         clientName,
         site,
@@ -688,16 +893,32 @@ export async function POST(request: NextRequest) {
       alertsUpdated += availabilityAlert.updated;
       alertsClosed += availabilityAlert.closed;
 
+      const emailNotification = await buildEmailNotification({
+        supabaseAdmin,
+        customerId,
+        deviceId,
+        alertId: availabilityAlert.alertId,
+        hostname,
+        clientName,
+        site,
+        lastSeenAt,
+        availabilityAlert,
+      });
+
+      if (emailNotification) {
+        emailNotifications.push(emailNotification);
+      }
+
       const activeAlerts = await refreshDeviceActiveAlerts(
         supabaseAdmin,
-        createdDevice.id as string,
+        deviceId,
       );
 
       created += 1;
       deviceResults.push({
         hostname,
         action: 'created',
-        id: createdDevice.id as string,
+        id: deviceId,
         status: nextStatus,
         activeAlerts,
         availabilityAlert,
@@ -714,6 +935,7 @@ export async function POST(request: NextRequest) {
       alerts_created: alertsCreated,
       alerts_updated: alertsUpdated,
       alerts_closed: alertsClosed,
+      email_notifications: emailNotifications,
       devices: deviceResults,
     });
   } catch (error) {
