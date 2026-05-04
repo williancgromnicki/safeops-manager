@@ -252,12 +252,14 @@ function removeTechnicalFields(
   }
 
   const hiddenKeys = new Set([
-    'raw',
-    'summary',
-    'physical_disks',
-    'volumes',
-    'adapters',
-  ]);
+  'raw',
+  'summary',
+  'physical_disks',
+  'volumes',
+  'adapters',
+  'tactical_agent_id',
+  'agent_id',
+]);
 
   const entries = Object.entries(data).filter(
     ([key, value]) =>
