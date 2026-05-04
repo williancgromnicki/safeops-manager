@@ -42,6 +42,18 @@ type AvailabilityAlertResult = {
   created: number;
   updated: number;
   closed: number;
+  alertId?: string;
+};
+
+type EmailNotification = {
+  kind: 'offline_created' | 'offline_recovered';
+  severity: 'INFO' | 'WARN' | 'CRIT';
+  subject: string;
+  body: string;
+  recipients: string[];
+  customerId: string;
+  deviceId: string;
+  alertId?: string;
 };
 
 const OFFLINE_ALERT_TYPE = 'availability_offline';
