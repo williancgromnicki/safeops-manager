@@ -2,6 +2,17 @@ import { type OperationalStatus } from '@/lib/demo-data';
 import { createClient } from '@/lib/supabase/server';
 import { normalizeDeviceStatus } from '@/lib/data/get-devices';
 
+export type HardwareInventory = {
+  identification?: Record<string, unknown>;
+  cpu?: Record<string, unknown>;
+  memory?: Record<string, unknown>;
+  storage?: Record<string, unknown>;
+  network?: Record<string, unknown>;
+  graphics?: unknown[];
+  operatingSystem?: Record<string, unknown>;
+  raw?: unknown;
+};
+
 export type DeviceDetail = {
   id: string;
   customerId: string;
@@ -18,6 +29,9 @@ export type DeviceDetail = {
   cpu: string;
   ramGb: number | null;
   diskTotalGb: number | null;
+  hardwareInventory: HardwareInventory | null;
+  inventorySource: string | null;
+  inventoryVersion: string | null;
 };
 
 type DeviceDetailRow = {
@@ -36,6 +50,9 @@ type DeviceDetailRow = {
   ram_gb: number | null;
   disk_total_gb: number | null;
   last_inventory_at: string | null;
+  hardware_inventory: HardwareInventory | null;
+  inventory_source: string | null;
+  inventory_version: string | null;
 };
 
 function formatDateTime(value: string | null): string {
@@ -71,6 +88,9 @@ export async function getDeviceDetail(
         'ram_gb',
         'disk_total_gb',
         'last_inventory_at',
+        'hardware_inventory',
+        'inventory_source',
+        'inventory_version',
       ].join(', '),
     )
     .eq('customer_id', customerId)
@@ -98,5 +118,8 @@ export async function getDeviceDetail(
     cpu: data.cpu ?? 'Não informado',
     ramGb: data.ram_gb,
     diskTotalGb: data.disk_total_gb,
+    hardwareInventory: data.hardware_inventory,
+    inventorySource: data.inventory_source,
+    inventoryVersion: data.inventory_version,
   };
 }
