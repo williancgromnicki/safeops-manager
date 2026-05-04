@@ -24,10 +24,28 @@ type IncomingPayload = {
   devices?: IncomingDevice[];
 };
 
+type DeviceStatus = 'online' | 'offline' | 'attention' | 'unknown';
+
 type ExistingDeviceRow = {
   id: string;
   active_alerts: number | null;
+  status: string | null;
+  last_seen_at: string | null;
 };
+
+type OpenAlertRow = {
+  id: string;
+  occurrence_count: number | null;
+};
+
+type AvailabilityAlertResult = {
+  created: number;
+  updated: number;
+  closed: number;
+};
+
+const OFFLINE_ALERT_TYPE = 'availability_offline';
+const OFFLINE_ALERT_TITLE = 'Dispositivo offline';
 
 function cleanString(value?: string | null): string | null {
   const cleaned = value?.trim();
@@ -66,7 +84,7 @@ function parseNumber(value?: number | string | null): number | null {
   return parsed;
 }
 
-function normalizeDeviceStatus(status?: string | null): 'online' | 'offline' | 'attention' | 'unknown' {
+function normalizeDeviceStatus(status?: string | null): DeviceStatus {
   const normalized = (status ?? '').trim().toLowerCase();
 
   if (['online', 'ok', 'up', 'ativo', 'active'].includes(normalized)) {
@@ -77,11 +95,36 @@ function normalizeDeviceStatus(status?: string | null): 'online' | 'offline' | '
     return 'offline';
   }
 
-  if (['attention', 'warning', 'warn', 'alerta', 'atenção'].includes(normalized)) {
+  if (
+    ['attention', 'warning', 'warn', 'alerta', 'atenção'].includes(normalized)
+  ) {
     return 'attention';
   }
 
   return 'unknown';
+}
+
+function formatLastSeenForDetails(lastSeenAt: string | null): string {
+  if (!lastSeenAt) {
+    return 'Sem informação de último check-in.';
+  }
+
+  return new Date(lastSeenAt).toLocaleString('pt-BR');
+}
+
+function buildOfflineAlertDetails(input: {
+  hostname: string;
+  clientName: string;
+  site: string | null;
+  lastSeenAt: string | null;
+}): string {
+  return [
+    `O dispositivo ${input.hostname} está offline no SafeOps Manager.`,
+    `Cliente: ${input.clientName}.`,
+    `Site: ${input.site ?? 'Não informado'}.`,
+    `Último check-in: ${formatLastSeenForDetails(input.lastSeenAt)}.`,
+    'Critério atual: dispositivo sem check-in dentro do limite configurado no sync de inventário.',
+  ].join('\n');
 }
 
 async function assignCustomerToDefaultAdmin(
@@ -149,7 +192,10 @@ async function resolveCustomer(
   }
 
   if (customerMatch?.id) {
-    await assignCustomerToDefaultAdmin(supabaseAdmin, customerMatch.id as string);
+    await assignCustomerToDefaultAdmin(
+      supabaseAdmin,
+      customerMatch.id as string,
+    );
     return customerMatch.id as string;
   }
 
@@ -182,7 +228,7 @@ async function findExistingDevice(
   if (tacticalAgentId) {
     const { data, error } = await supabaseAdmin
       .from('devices')
-      .select('id, active_alerts')
+      .select('id, active_alerts, status, last_seen_at')
       .eq('customer_id', customerId)
       .eq('tactical_agent_id', tacticalAgentId)
       .limit(1)
@@ -199,7 +245,7 @@ async function findExistingDevice(
 
   const { data, error } = await supabaseAdmin
     .from('devices')
-    .select('id, active_alerts')
+    .select('id, active_alerts, status, last_seen_at')
     .eq('customer_id', customerId)
     .eq('hostname', hostname)
     .limit(1)
@@ -210,6 +256,246 @@ async function findExistingDevice(
   }
 
   return data as ExistingDeviceRow | null;
+}
+
+async function findOpenOfflineAlert(
+  supabaseAdmin: ReturnType<typeof getSupabaseAdmin>,
+  customerId: string,
+  deviceId: string,
+): Promise<OpenAlertRow | null> {
+  const { data, error } = await supabaseAdmin
+    .from('alerts')
+    .select('id, occurrence_count')
+    .eq('customer_id', customerId)
+    .eq('device_id', deviceId)
+    .eq('alert_type', OFFLINE_ALERT_TYPE)
+    .eq('status', 'open')
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Erro ao buscar alerta offline aberto: ${error.message}`);
+  }
+
+  return data as OpenAlertRow | null;
+}
+
+async function createOrUpdateOfflineAlert(input: {
+  supabaseAdmin: ReturnType<typeof getSupabaseAdmin>;
+  customerId: string;
+  deviceId: string;
+  hostname: string;
+  clientName: string;
+  site: string | null;
+  lastSeenAt: string | null;
+  shouldIncrementOccurrence: boolean;
+}): Promise<AvailabilityAlertResult> {
+  const {
+    supabaseAdmin,
+    customerId,
+    deviceId,
+    hostname,
+    clientName,
+    site,
+    lastSeenAt,
+    shouldIncrementOccurrence,
+  } = input;
+
+  const now = new Date().toISOString();
+  const existingAlert = await findOpenOfflineAlert(
+    supabaseAdmin,
+    customerId,
+    deviceId,
+  );
+
+  const details = buildOfflineAlertDetails({
+    hostname,
+    clientName,
+    site,
+    lastSeenAt,
+  });
+
+  if (existingAlert) {
+    const nextOccurrenceCount = shouldIncrementOccurrence
+      ? (existingAlert.occurrence_count ?? 1) + 1
+      : (existingAlert.occurrence_count ?? 1);
+
+    const { error } = await supabaseAdmin
+      .from('alerts')
+      .update({
+        severity: 'CRIT',
+        title: OFFLINE_ALERT_TITLE,
+        details,
+        status: 'open',
+        occurrence_count: nextOccurrenceCount,
+        last_seen_at: now,
+        resolved_at: null,
+      })
+      .eq('id', existingAlert.id);
+
+    if (error) {
+      throw new Error(`Erro ao atualizar alerta offline: ${error.message}`);
+    }
+
+    return {
+      created: 0,
+      updated: 1,
+      closed: 0,
+    };
+  }
+
+  const { error } = await supabaseAdmin.from('alerts').insert({
+    customer_id: customerId,
+    device_id: deviceId,
+    source: 'SafeOps Inventory Sync',
+    alert_type: OFFLINE_ALERT_TYPE,
+    severity: 'CRIT',
+    title: OFFLINE_ALERT_TITLE,
+    details,
+    status: 'open',
+    occurred_at: now,
+    occurrence_count: 1,
+    last_seen_at: now,
+    resolved_at: null,
+  });
+
+  if (error) {
+    throw new Error(`Erro ao criar alerta offline: ${error.message}`);
+  }
+
+  return {
+    created: 1,
+    updated: 0,
+    closed: 0,
+  };
+}
+
+async function closeOfflineAlert(input: {
+  supabaseAdmin: ReturnType<typeof getSupabaseAdmin>;
+  customerId: string;
+  deviceId: string;
+}): Promise<AvailabilityAlertResult> {
+  const { supabaseAdmin, customerId, deviceId } = input;
+
+  const existingAlert = await findOpenOfflineAlert(
+    supabaseAdmin,
+    customerId,
+    deviceId,
+  );
+
+  if (!existingAlert) {
+    return {
+      created: 0,
+      updated: 0,
+      closed: 0,
+    };
+  }
+
+  const now = new Date().toISOString();
+
+  const { error } = await supabaseAdmin
+    .from('alerts')
+    .update({
+      status: 'closed',
+      resolved_at: now,
+      last_seen_at: now,
+    })
+    .eq('id', existingAlert.id);
+
+  if (error) {
+    throw new Error(`Erro ao fechar alerta offline: ${error.message}`);
+  }
+
+  return {
+    created: 0,
+    updated: 0,
+    closed: 1,
+  };
+}
+
+async function refreshDeviceActiveAlerts(
+  supabaseAdmin: ReturnType<typeof getSupabaseAdmin>,
+  deviceId: string,
+): Promise<number> {
+  const { count, error: countError } = await supabaseAdmin
+    .from('alerts')
+    .select('id', { count: 'exact', head: true })
+    .eq('device_id', deviceId)
+    .eq('status', 'open');
+
+  if (countError) {
+    throw new Error(
+      `Erro ao recalcular alertas ativos do device: ${countError.message}`,
+    );
+  }
+
+  const activeAlerts = count ?? 0;
+
+  const { error: updateError } = await supabaseAdmin
+    .from('devices')
+    .update({
+      active_alerts: activeAlerts,
+    })
+    .eq('id', deviceId);
+
+  if (updateError) {
+    throw new Error(
+      `Erro ao atualizar contador de alertas ativos: ${updateError.message}`,
+    );
+  }
+
+  return activeAlerts;
+}
+
+async function handleAvailabilityAlert(input: {
+  supabaseAdmin: ReturnType<typeof getSupabaseAdmin>;
+  customerId: string;
+  deviceId: string;
+  hostname: string;
+  clientName: string;
+  site: string | null;
+  previousStatus: string | null;
+  nextStatus: DeviceStatus;
+  lastSeenAt: string | null;
+}): Promise<AvailabilityAlertResult> {
+  const {
+    supabaseAdmin,
+    customerId,
+    deviceId,
+    hostname,
+    clientName,
+    site,
+    previousStatus,
+    nextStatus,
+    lastSeenAt,
+  } = input;
+
+  if (nextStatus === 'offline') {
+    return createOrUpdateOfflineAlert({
+      supabaseAdmin,
+      customerId,
+      deviceId,
+      hostname,
+      clientName,
+      site,
+      lastSeenAt,
+      shouldIncrementOccurrence: previousStatus !== 'offline',
+    });
+  }
+
+  if (previousStatus === 'offline' && nextStatus === 'online') {
+    return closeOfflineAlert({
+      supabaseAdmin,
+      customerId,
+      deviceId,
+    });
+  }
+
+  return {
+    created: 0,
+    updated: 0,
+    closed: 0,
+  };
 }
 
 export async function POST(request: NextRequest) {
@@ -256,12 +542,18 @@ export async function POST(request: NextRequest) {
     let created = 0;
     let updated = 0;
     let skipped = 0;
+    let alertsCreated = 0;
+    let alertsUpdated = 0;
+    let alertsClosed = 0;
 
     const deviceResults: Array<{
       hostname: string;
       action: 'created' | 'updated' | 'skipped';
       id?: string;
       reason?: string;
+      status?: DeviceStatus;
+      activeAlerts?: number;
+      availabilityAlert?: AvailabilityAlertResult;
     }> = [];
 
     for (const incomingDevice of payload.devices) {
@@ -287,14 +579,18 @@ export async function POST(request: NextRequest) {
         tacticalAgentId,
       );
 
+      const nextStatus = normalizeDeviceStatus(incomingDevice.status);
+      const lastSeenAt = parseDate(incomingDevice.last_seen_at);
+      const site = cleanString(incomingDevice.site) ?? cleanString(payload.site);
+
       const deviceData = {
         customer_id: customerId,
         tactical_agent_id: tacticalAgentId,
         hostname,
-        site: cleanString(incomingDevice.site) ?? cleanString(payload.site),
+        site,
         operating_system: cleanString(incomingDevice.operating_system),
-        status: normalizeDeviceStatus(incomingDevice.status),
-        last_seen_at: parseDate(incomingDevice.last_seen_at),
+        status: nextStatus,
+        last_seen_at: lastSeenAt,
         visible_to_customer: true,
         manufacturer: cleanString(incomingDevice.manufacturer),
         model: cleanString(incomingDevice.model),
@@ -317,11 +613,35 @@ export async function POST(request: NextRequest) {
           throw new Error(`Erro ao atualizar ${hostname}: ${updateError.message}`);
         }
 
+        const availabilityAlert = await handleAvailabilityAlert({
+          supabaseAdmin,
+          customerId,
+          deviceId: updatedDevice.id as string,
+          hostname,
+          clientName,
+          site,
+          previousStatus: existingDevice.status,
+          nextStatus,
+          lastSeenAt,
+        });
+
+        alertsCreated += availabilityAlert.created;
+        alertsUpdated += availabilityAlert.updated;
+        alertsClosed += availabilityAlert.closed;
+
+        const activeAlerts = await refreshDeviceActiveAlerts(
+          supabaseAdmin,
+          updatedDevice.id as string,
+        );
+
         updated += 1;
         deviceResults.push({
           hostname,
           action: 'updated',
           id: updatedDevice.id as string,
+          status: nextStatus,
+          activeAlerts,
+          availabilityAlert,
         });
 
         continue;
@@ -340,11 +660,35 @@ export async function POST(request: NextRequest) {
         throw new Error(`Erro ao criar ${hostname}: ${createError.message}`);
       }
 
+      const availabilityAlert = await handleAvailabilityAlert({
+        supabaseAdmin,
+        customerId,
+        deviceId: createdDevice.id as string,
+        hostname,
+        clientName,
+        site,
+        previousStatus: null,
+        nextStatus,
+        lastSeenAt,
+      });
+
+      alertsCreated += availabilityAlert.created;
+      alertsUpdated += availabilityAlert.updated;
+      alertsClosed += availabilityAlert.closed;
+
+      const activeAlerts = await refreshDeviceActiveAlerts(
+        supabaseAdmin,
+        createdDevice.id as string,
+      );
+
       created += 1;
       deviceResults.push({
         hostname,
         action: 'created',
         id: createdDevice.id as string,
+        status: nextStatus,
+        activeAlerts,
+        availabilityAlert,
       });
     }
 
@@ -355,6 +699,9 @@ export async function POST(request: NextRequest) {
       created,
       updated,
       skipped,
+      alerts_created: alertsCreated,
+      alerts_updated: alertsUpdated,
+      alerts_closed: alertsClosed,
       devices: deviceResults,
     });
   } catch (error) {
