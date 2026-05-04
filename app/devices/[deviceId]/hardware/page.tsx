@@ -647,7 +647,7 @@ export default async function HardwareInventoryPage({
         description="Discos físicos, SSDs, NVMes, volumes, partições e uso de espaço."
         defaultOpen
       >
-        <StorageSection data={hardwareInventory?.storage} />
+        <StorageSection storage={hardwareInventory?.storage} />
       </InventorySection>
 
       <InventorySection
@@ -655,7 +655,7 @@ export default async function HardwareInventoryPage({
         description="Adaptadores de rede, MAC, velocidade, IPs, gateways e DNS quando disponíveis."
         defaultOpen
       >
-        <NetworkSection data={hardwareInventory?.network} />
+        <NetworkSection network={hardwareInventory?.network} />
       </InventorySection>
 
       <InventorySection
