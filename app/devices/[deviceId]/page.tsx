@@ -114,6 +114,10 @@ export default async function DeviceDetailPage({
     );
   }
 
+  const hardwareInventoryHref = `/devices/${device.id}/hardware?customerId=${encodeURIComponent(
+    activeCustomer.customerId,
+  )}`;
+
   return (
     <section className="space-y-6">
       <div>
@@ -142,7 +146,16 @@ export default async function DeviceDetailPage({
             </div>
           </div>
 
-          <DeviceStatusBadge status={device.status} />
+          <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+            <Link
+              href={hardwareInventoryHref}
+              className="inline-flex items-center justify-center rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-800 transition hover:bg-brand-100"
+            >
+              Ver inventário de hardware
+            </Link>
+
+            <DeviceStatusBadge status={device.status} />
+          </div>
         </div>
       </div>
 
@@ -173,7 +186,23 @@ export default async function DeviceDetailPage({
       </div>
 
       <div className="rounded-2xl border border-surface-border bg-white p-5 shadow-sm">
-        <h3 className="section-title">Inventário do equipamento</h3>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 className="section-title">Inventário do equipamento</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              Resumo principal do equipamento. Para dados completos de disco,
+              rede, adaptadores e demais componentes, acesse o inventário de
+              hardware.
+            </p>
+          </div>
+
+          <Link
+            href={hardwareInventoryHref}
+            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+          >
+            Abrir detalhes
+          </Link>
+        </div>
 
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <div>
