@@ -134,16 +134,21 @@ async function getAuthenticatedUser() {
   } = await supabase.auth.getUser();
 
   if (error) {
+    const message = error.message.toLowerCase();
+
+    if (
+      message.includes('auth session missing') ||
+      message.includes('session missing') ||
+      message.includes('jwt')
+    ) {
+      return null;
+    }
+
     throw new Error(`Erro ao validar usuário autenticado: ${error.message}`);
   }
 
-  if (!user) {
-    return null;
-  }
-
-  return user;
+  return user ?? null;
 }
-
 async function getUserAccessRows(userId: string): Promise<UserAccessRow[]> {
   const supabaseAdmin = getSupabaseAdmin();
 
