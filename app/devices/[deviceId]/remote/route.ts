@@ -16,7 +16,15 @@ type DeviceRemoteRow = {
   customer_id: string;
   hostname: string;
   tactical_agent_id: string | null;
+  mesh_node_id: string | null;
+  remote_access_url: string | null;
 };
+
+function cleanString(value?: string | null): string | null {
+  const cleaned = value?.trim();
+
+  return cleaned ? cleaned : null;
+}
 
 function replaceTemplateVariables(
   template: string,
@@ -24,14 +32,17 @@ function replaceTemplateVariables(
     deviceId: string;
     customerId: string;
     hostname: string;
-    agentId: string;
+    agentId: string | null;
+    meshNodeId: string | null;
   },
 ): string {
   return template
     .replaceAll('{deviceId}', encodeURIComponent(input.deviceId))
     .replaceAll('{customerId}', encodeURIComponent(input.customerId))
     .replaceAll('{hostname}', encodeURIComponent(input.hostname))
-    .replaceAll('{agentId}', encodeURIComponent(input.agentId));
+    .replaceAll('{agentId}', encodeURIComponent(input.agentId ?? ''))
+    .replaceAll('{meshNodeId}', encodeURIComponent(input.meshNodeId ?? ''))
+    .replaceAll('{mesh_node_id}', encodeURIComponent(input.meshNodeId ?? ''));
 }
 
 function buildRemoteAccessUrl(input: {
@@ -39,23 +50,24 @@ function buildRemoteAccessUrl(input: {
   customerId: string;
   hostname: string;
   agentId: string | null;
-}): string | null {
-  const template = process.env.SAFEOPS_REMOTE_URL_TEMPLATE?.trim();
+  meshNodeId: string | null;
+  remoteAccessUrl: string | null;
+}): string {
+  const savedRemoteAccessUrl = cleanString(input.remoteAccessUrl);
 
-  if (!template) {
-    return null;
+  if (savedRemoteAccessUrl) {
+    return savedRemoteAccessUrl;
   }
 
-  if (!input.agentId) {
-    return null;
+  const template =
+    process.env.SAFEOPS_REMOTE_URL_TEMPLATE?.trim() ??
+    'https://central.safesys.net.br/?viewmode=11&gotonode={meshNodeId}';
+
+  if (input.meshNodeId) {
+    return replaceTemplateVariables(template, input);
   }
 
-  return replaceTemplateVariables(template, {
-    deviceId: input.deviceId,
-    customerId: input.customerId,
-    hostname: input.hostname,
-    agentId: input.agentId,
-  });
+  return 'https://central.safesys.net.br';
 }
 
 export async function POST(
@@ -93,7 +105,9 @@ export async function POST(
 
   const { data, error } = await supabase
     .from('devices')
-    .select('id, customer_id, hostname, tactical_agent_id')
+    .select(
+      'id, customer_id, hostname, tactical_agent_id, mesh_node_id, remote_access_url',
+    )
     .eq('id', deviceId)
     .eq('customer_id', activeCustomer.customerId)
     .eq('visible_to_customer', true)
@@ -125,18 +139,9 @@ export async function POST(
     customerId: activeCustomer.customerId,
     hostname: data.hostname,
     agentId: data.tactical_agent_id,
+    meshNodeId: data.mesh_node_id,
+    remoteAccessUrl: data.remote_access_url,
   });
-
-  if (!remoteUrl) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error:
-          'Acesso remoto ainda não configurado. Configure SAFEOPS_REMOTE_URL_TEMPLATE na Vercel.',
-      },
-      { status: 501 },
-    );
-  }
 
   return NextResponse.json({
     ok: true,
@@ -145,6 +150,8 @@ export async function POST(
       id: data.id,
       hostname: data.hostname,
       customerId: activeCustomer.customerId,
+      hasMeshNodeId: Boolean(data.mesh_node_id),
+      hasRemoteAccessUrl: Boolean(data.remote_access_url),
     },
   });
 }
