@@ -452,20 +452,39 @@ function StorageSection({ storage }: { storage?: Record<string, unknown> }) {
 }
 
 function NetworkSection({ network }: { network?: Record<string, unknown> }) {
-  const networkInventory = network as NetworkInventory | undefined;
+  const networkInventory = network as
+    | (NetworkInventory & {
+        public_ip?: unknown;
+        primary_private_ip?: unknown;
+      })
+    | undefined;
 
   return (
     <div className="space-y-6">
-      <ObjectGrid
-        data={{
-          adapter_count: networkInventory?.adapter_count,
-        }}
-      />
+      <div>
+        <h4 className="mb-3 text-sm font-semibold text-slate-800">
+          Resumo de rede
+        </h4>
 
-      <ArrayCards
-        data={networkInventory?.adapters}
-        titlePrefix="Adaptador"
-      />
+        <ObjectGrid
+          data={{
+            public_ip: networkInventory?.public_ip,
+            primary_private_ip: networkInventory?.primary_private_ip,
+            adapter_count: networkInventory?.adapter_count,
+          }}
+        />
+      </div>
+
+      <div>
+        <h4 className="mb-3 text-sm font-semibold text-slate-800">
+          Adaptadores de rede
+        </h4>
+
+        <ArrayCards
+          data={networkInventory?.adapters}
+          titlePrefix="Adaptador"
+        />
+      </div>
     </div>
   );
 }
