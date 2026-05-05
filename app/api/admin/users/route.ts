@@ -9,6 +9,7 @@ export const dynamic = 'force-dynamic';
 type CreateUserPayload = {
   email?: string;
   password?: string;
+  fullName?: string;
 };
 
 function cleanString(value?: string | null): string | null {
@@ -43,6 +44,30 @@ async function assertAdmin(): Promise<void> {
   }
 }
 
+async function upsertProfile(input: {
+  userId: string;
+  email: string;
+  fullName: string | null;
+}) {
+  const supabaseAdmin = getSupabaseAdmin();
+
+  const { error } = await supabaseAdmin.from('profiles').upsert(
+    {
+      id: input.userId,
+      email: input.email,
+      full_name: input.fullName,
+      role: 'customer_user',
+    },
+    {
+      onConflict: 'id',
+    },
+  );
+
+  if (error) {
+    throw new Error(`Usuário criado no Auth, mas falhou ao criar profile: ${error.message}`);
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     await assertAdmin();
@@ -50,6 +75,7 @@ export async function POST(request: NextRequest) {
     const payload = (await request.json()) as CreateUserPayload;
     const email = cleanString(payload.email)?.toLowerCase() ?? null;
     const password = cleanString(payload.password);
+    const fullName = cleanString(payload.fullName);
 
     if (!email) {
       return NextResponse.json(
@@ -79,6 +105,7 @@ export async function POST(request: NextRequest) {
       email_confirm: true,
       user_metadata: {
         created_by: 'safeops-admin',
+        full_name: fullName,
       },
     });
 
@@ -86,10 +113,22 @@ export async function POST(request: NextRequest) {
       throw new Error(`Erro ao criar usuário: ${error.message}`);
     }
 
+    const userId = data.user?.id;
+
+    if (!userId) {
+      throw new Error('Usuário criado, mas o Supabase não retornou o ID.');
+    }
+
+    await upsertProfile({
+      userId,
+      email,
+      fullName,
+    });
+
     return NextResponse.json({
       ok: true,
       message: 'Usuário criado com sucesso.',
-      userId: data.user?.id,
+      userId,
     });
   } catch (error) {
     const message =
