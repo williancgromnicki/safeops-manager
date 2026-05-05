@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { DataTable } from '@/components/DataTable';
 import { DevicePlatformIcon } from '@/components/DevicePlatformIcon';
 import { EmptyState } from '@/components/EmptyState';
+import { RemoteAccessButton } from '@/components/RemoteAccessButton';
 import { SeverityBadge } from '@/components/SeverityBadge';
 import { StatCard } from '@/components/StatCard';
 import { getDeviceAlerts } from '@/lib/data/get-device-alerts';
@@ -148,7 +149,14 @@ export default async function DeviceDetailPage({
             </div>
           </div>
 
-          <DeviceStatusBadge status={device.status} />
+          <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+            <RemoteAccessButton
+              deviceId={deviceId}
+              customerId={activeCustomer.customerId}
+            />
+
+            <DeviceStatusBadge status={device.status} />
+          </div>
         </div>
       </div>
 
