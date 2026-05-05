@@ -1,4 +1,7 @@
+'use client';
+
 import { ReactNode, Suspense } from 'react';
+import { usePathname } from 'next/navigation';
 
 import { Header } from '@/components/Header';
 import { Sidebar } from '@/components/Sidebar';
@@ -7,6 +10,8 @@ type AppShellProps = {
   title?: string;
   children: ReactNode;
 };
+
+const PUBLIC_PATHS = ['/login'];
 
 function SidebarFallback() {
   return (
@@ -32,7 +37,18 @@ function SidebarFallback() {
   );
 }
 
-export function AppShell({ title = 'SafeOps Manager', children }: AppShellProps) {
+export function AppShell({
+  title = 'SafeOps Manager',
+  children,
+}: AppShellProps) {
+  const pathname = usePathname();
+
+  const isPublicPath = PUBLIC_PATHS.some((path) => pathname === path);
+
+  if (isPublicPath) {
+    return <div className="min-h-screen bg-surface-light">{children}</div>;
+  }
+
   return (
     <div className="min-h-screen bg-surface-light lg:flex">
       <Suspense fallback={<SidebarFallback />}>
