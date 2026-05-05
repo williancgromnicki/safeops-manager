@@ -41,6 +41,17 @@ type DeviceRow = {
   tactical_agent_id: string | null;
 };
 
+type NormalizedSoftwareItem = {
+  software_name: string;
+  software_version: string | null;
+  publisher: string | null;
+  install_date: string | null;
+  size: string | null;
+  location: string | null;
+  source: string;
+  raw: JsonObject;
+};
+
 function cleanString(value?: string | null): string | null {
   const cleaned = value?.trim();
 
@@ -57,7 +68,9 @@ function normalizeSoftwareName(value?: string | null): string | null {
   return cleaned;
 }
 
-function normalizeSoftwareItem(item: IncomingSoftwareItem) {
+function normalizeSoftwareItem(
+  item: IncomingSoftwareItem,
+): NormalizedSoftwareItem | null {
   const softwareName = normalizeSoftwareName(item.name);
 
   if (!softwareName) {
@@ -74,6 +87,51 @@ function normalizeSoftwareItem(item: IncomingSoftwareItem) {
     source: cleanString(item.source) ?? 'Tactical RMM',
     raw: item as JsonObject,
   };
+}
+
+function buildSoftwareDedupKey(item: NormalizedSoftwareItem): string {
+  return [
+    item.software_name.trim().toLowerCase(),
+    item.software_version?.trim().toLowerCase() ?? '',
+  ].join('::');
+}
+
+function deduplicateSoftwareItems(
+  items: NormalizedSoftwareItem[],
+): NormalizedSoftwareItem[] {
+  const unique = new Map<string, NormalizedSoftwareItem>();
+
+  for (const item of items) {
+    const key = buildSoftwareDedupKey(item);
+
+    if (!unique.has(key)) {
+      unique.set(key, item);
+      continue;
+    }
+
+    const existing = unique.get(key);
+
+    if (!existing) {
+      unique.set(key, item);
+      continue;
+    }
+
+    unique.set(key, {
+      ...existing,
+      publisher: existing.publisher ?? item.publisher,
+      install_date: existing.install_date ?? item.install_date,
+      size: existing.size ?? item.size,
+      location: existing.location ?? item.location,
+      source: existing.source ?? item.source,
+      raw: {
+        ...item.raw,
+        duplicate_merged: true,
+        previous_raw: existing.raw,
+      },
+    });
+  }
+
+  return Array.from(unique.values());
 }
 
 async function resolveCustomer(
@@ -129,7 +187,9 @@ async function findDevice(input: {
       .maybeSingle();
 
     if (error) {
-      throw new Error(`Erro ao buscar dispositivo por agent id: ${error.message}`);
+      throw new Error(
+        `Erro ao buscar dispositivo por agent id: ${error.message}`,
+      );
     }
 
     if (data) {
@@ -162,9 +222,11 @@ async function replaceDeviceSoftwareInventory(input: {
 
   const normalizedItems = software
     .map(normalizeSoftwareItem)
-    .filter((item): item is NonNullable<ReturnType<typeof normalizeSoftwareItem>> =>
-      Boolean(item),
-    );
+    .filter((item): item is NormalizedSoftwareItem => Boolean(item));
+
+  const uniqueItems = deduplicateSoftwareItems(normalizedItems);
+
+  const duplicatesRemoved = normalizedItems.length - uniqueItems.length;
 
   const { error: deleteError } = await supabaseAdmin
     .from('device_software_inventory')
@@ -172,18 +234,21 @@ async function replaceDeviceSoftwareInventory(input: {
     .eq('device_id', deviceId);
 
   if (deleteError) {
-    throw new Error(`Erro ao limpar inventário de software: ${deleteError.message}`);
+    throw new Error(
+      `Erro ao limpar inventário de software: ${deleteError.message}`,
+    );
   }
 
-  if (normalizedItems.length === 0) {
+  if (uniqueItems.length === 0) {
     return {
       inserted: 0,
+      duplicatesRemoved,
     };
   }
 
   const now = new Date().toISOString();
 
-  const rows = normalizedItems.map((item) => ({
+  const rows = uniqueItems.map((item) => ({
     customer_id: customerId,
     device_id: deviceId,
     software_name: item.software_name,
@@ -208,7 +273,9 @@ async function replaceDeviceSoftwareInventory(input: {
       .insert(chunk);
 
     if (insertError) {
-      throw new Error(`Erro ao inserir inventário de software: ${insertError.message}`);
+      throw new Error(
+        `Erro ao inserir inventário de software: ${insertError.message}`,
+      );
     }
 
     inserted += chunk.length;
@@ -216,6 +283,7 @@ async function replaceDeviceSoftwareInventory(input: {
 
   return {
     inserted,
+    duplicatesRemoved,
   };
 }
 
@@ -276,12 +344,14 @@ export async function POST(request: NextRequest) {
     let matched = 0;
     let skipped = 0;
     let softwareInserted = 0;
+    let duplicatesRemoved = 0;
 
     const results: Array<{
       hostname: string;
       action: 'updated' | 'skipped';
       deviceId?: string;
       softwareCount?: number;
+      duplicatesRemoved?: number;
       reason?: string;
     }> = [];
 
@@ -331,12 +401,14 @@ export async function POST(request: NextRequest) {
 
       matched += 1;
       softwareInserted += replaceResult.inserted;
+      duplicatesRemoved += replaceResult.duplicatesRemoved;
 
       results.push({
         hostname,
         action: 'updated',
         deviceId: device.id,
         softwareCount: replaceResult.inserted,
+        duplicatesRemoved: replaceResult.duplicatesRemoved,
       });
     }
 
@@ -347,6 +419,7 @@ export async function POST(request: NextRequest) {
       matched,
       skipped,
       software_inserted: softwareInserted,
+      duplicates_removed: duplicatesRemoved,
       devices: results,
     });
   } catch (error) {
