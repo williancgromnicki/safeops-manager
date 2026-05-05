@@ -25,6 +25,9 @@ type IncomingDevice = {
   hardware_inventory?: JsonObject | null;
   inventory_source?: string | null;
   inventory_version?: string | null;
+  mesh_node_id?: string | null;
+  remote_access_url?: string | null;
+  remote_access_synced_at?: string | null;
 };
 
 type IncomingPayload = {
@@ -869,7 +872,13 @@ export async function POST(request: NextRequest) {
       }
 
       const tacticalAgentId = cleanString(incomingDevice.tactical_agent_id);
+      const meshNodeId = cleanString(incomingDevice.mesh_node_id);
+      const remoteAccessUrl = cleanString(incomingDevice.remote_access_url);
       const now = new Date().toISOString();
+
+      const remoteAccessSyncedAt =
+        parseDate(incomingDevice.remote_access_synced_at) ??
+        (meshNodeId || remoteAccessUrl ? now : null);
 
       const existingDevice = await findExistingDevice(
         supabaseAdmin,
@@ -910,6 +919,9 @@ export async function POST(request: NextRequest) {
           'SafeOps Inventory Sync',
         inventory_version:
           cleanString(incomingDevice.inventory_version) ?? '1.0',
+        mesh_node_id: meshNodeId,
+        remote_access_url: remoteAccessUrl,
+        remote_access_synced_at: remoteAccessSyncedAt,
         last_inventory_at: now,
       };
 
