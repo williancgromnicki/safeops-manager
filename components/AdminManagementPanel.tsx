@@ -398,12 +398,13 @@ export function AdminManagementPanel({ customers }: AdminManagementPanelProps) {
             <FieldLabel label="Senha temporária">
               <input
                 className={inputClassName}
-                type="text"
+                type="password"
                 value={userPassword}
                 onChange={(event) => setUserPassword(event.target.value)}
                 placeholder="Defina uma senha temporária"
                 required
                 minLength={8}
+                autoComplete="new-password"
               />
             </FieldLabel>
 
