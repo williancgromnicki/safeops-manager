@@ -53,7 +53,9 @@ async function listAdminCustomers(): Promise<AdminCustomer[]> {
     throw new Error(`Erro ao listar clientes administrativos: ${error.message}`);
   }
 
-  return ((data ?? []) as CustomerRow[]).map((customer) => ({
+  const rows = (data ?? []) as unknown as CustomerRow[];
+
+  return rows.map((customer) => ({
     id: customer.id,
     name: customer.name,
     slug: customer.slug ?? '',
