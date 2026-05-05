@@ -106,7 +106,7 @@ const labelMap: Record<string, string> = {
   index: 'Índice',
   net_enabled: 'Adaptador habilitado',
   physical_adapter: 'Adaptador físico',
-  ip_enabled: 'IP habilitado',,
+  ip_enabled: 'IP habilitado',
 
   driver_version: 'Versão do driver',
   video_processor: 'Processador gráfico',
