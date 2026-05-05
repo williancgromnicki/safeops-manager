@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
+import { LogoutButton } from '@/components/LogoutButton';
+
 type AllowedCustomer = {
   customerId: string;
   customerName: string;
@@ -116,66 +118,72 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="hidden w-72 shrink-0 border-r border-surface-border bg-white/90 p-6 shadow-sm lg:block">
-      <p className="mb-6 text-lg font-semibold text-brand-900">
-        SafeOps Manager
-      </p>
-
-      <div className="mb-6 rounded-xl border border-surface-border bg-white p-4 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Cliente ativo
+    <aside className="hidden min-h-screen w-72 shrink-0 flex-col border-r border-surface-border bg-white/90 p-6 shadow-sm lg:flex">
+      <div>
+        <p className="mb-6 text-lg font-semibold text-brand-900">
+          SafeOps Manager
         </p>
 
-        {isLoadingCustomers ? (
-          <div className="mt-3 h-10 rounded-lg bg-slate-100" />
-        ) : customers.length === 0 ? (
-          <p className="mt-2 text-sm text-slate-500">
-            Nenhum cliente vinculado
+        <div className="mb-6 rounded-xl border border-surface-border bg-white p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Cliente ativo
           </p>
-        ) : customers.length === 1 ? (
-          <p className="mt-2 truncate text-sm font-semibold text-brand-900">
-            {customers[0].customerName}
-          </p>
-        ) : (
-          <select
-            value={activeCustomerId ?? ''}
-            onChange={(event) => handleCustomerChange(event.target.value)}
-            className="mt-3 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-brand-900 outline-none transition focus:border-brand-700 focus:ring-2 focus:ring-brand-100"
-          >
-            {customers.map((customer) => (
-              <option key={customer.customerId} value={customer.customerId}>
-                {customer.customerName}
-              </option>
-            ))}
-          </select>
-        )}
+
+          {isLoadingCustomers ? (
+            <div className="mt-3 h-10 rounded-lg bg-slate-100" />
+          ) : customers.length === 0 ? (
+            <p className="mt-2 text-sm text-slate-500">
+              Nenhum cliente vinculado
+            </p>
+          ) : customers.length === 1 ? (
+            <p className="mt-2 truncate text-sm font-semibold text-brand-900">
+              {customers[0].customerName}
+            </p>
+          ) : (
+            <select
+              value={activeCustomerId ?? ''}
+              onChange={(event) => handleCustomerChange(event.target.value)}
+              className="mt-3 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-brand-900 outline-none transition focus:border-brand-700 focus:ring-2 focus:ring-brand-100"
+            >
+              {customers.map((customer) => (
+                <option key={customer.customerId} value={customer.customerId}>
+                  {customer.customerName}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        <ul className="space-y-2">
+          {NAV_ITEMS.map((item) => {
+            const active = pathname === item.href;
+            const href = buildHref(
+              item.href,
+              activeCustomerId,
+              item.preserveCustomer,
+            );
+
+            return (
+              <li key={item.href}>
+                <Link
+                  href={href}
+                  className={`block rounded-xl px-4 py-2.5 text-sm font-medium transition ${
+                    active
+                      ? 'bg-brand-700 text-white shadow-sm'
+                      : 'text-brand-900 hover:bg-brand-50'
+                  }`}
+                >
+                  {item.label}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
       </div>
 
-      <ul className="space-y-2">
-        {NAV_ITEMS.map((item) => {
-          const active = pathname === item.href;
-          const href = buildHref(
-            item.href,
-            activeCustomerId,
-            item.preserveCustomer,
-          );
-
-          return (
-            <li key={item.href}>
-              <Link
-                href={href}
-                className={`block rounded-xl px-4 py-2.5 text-sm font-medium transition ${
-                  active
-                    ? 'bg-brand-700 text-white shadow-sm'
-                    : 'text-brand-900 hover:bg-brand-50'
-                }`}
-              >
-                {item.label}
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
+      <div className="mt-auto border-t border-slate-200 pt-4">
+        <LogoutButton />
+      </div>
     </aside>
   );
 }
