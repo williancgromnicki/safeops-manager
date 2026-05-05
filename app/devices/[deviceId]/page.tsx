@@ -123,6 +123,10 @@ export default async function DeviceDetailPage({
     deviceId,
   )}/hardware?customerId=${encodeURIComponent(activeCustomer.customerId)}`;
 
+  const softwareInventoryHref = `/devices/${encodeURIComponent(
+    deviceId,
+  )}/software?customerId=${encodeURIComponent(activeCustomer.customerId)}`;
+
   return (
     <section className="space-y-6">
       <div>
@@ -193,17 +197,26 @@ export default async function DeviceDetailPage({
 
             <p className="mt-2 text-sm text-slate-600">
               Resumo principal do equipamento. Para informações completas de
-              hardware, rede, armazenamento e adaptadores, acesse o inventário
-              de hardware.
+              hardware, rede, armazenamento, adaptadores e softwares instalados,
+              acesse os inventários técnicos.
             </p>
           </div>
 
-          <Link
-            href={hardwareInventoryHref}
-            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
-          >
-            Abrir inventário completo
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href={hardwareInventoryHref}
+              className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              Abrir inventário completo
+            </Link>
+
+            <Link
+              href={softwareInventoryHref}
+              className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              Inventário de software
+            </Link>
+          </div>
         </div>
 
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
