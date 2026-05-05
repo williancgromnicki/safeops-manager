@@ -489,13 +489,6 @@ function NetworkSection({ network }: { network?: Record<string, unknown> }) {
   );
 }
 
-function RawJsonBlock({ data }: { data: unknown }) {
-  return (
-    <pre className="max-h-[520px] overflow-auto rounded-xl bg-slate-950 p-4 text-xs leading-relaxed text-slate-100">
-      {JSON.stringify(data, null, 2)}
-    </pre>
-  );
-}
 
 export default async function HardwareInventoryPage({
   params,
@@ -704,23 +697,7 @@ export default async function HardwareInventoryPage({
         <ObjectGrid data={hardwareInventory?.operatingSystem} />
       </InventorySection>
 
-      <InventorySection
-        title="Dados brutos do inventário"
-        description="Representação técnica completa do inventário recebido pelo SafeOps Manager. Use esta seção apenas para debug/auditoria."
-      >
-        {hardwareInventory ? (
-          <RawJsonBlock data={hardwareInventory} />
-        ) : (
-          <RawJsonBlock
-            data={{
-              message:
-                'hardware_inventory ainda não está disponível para este dispositivo.',
-              basic_identification: basicIdentification,
-              basic_hardware: basicHardware,
-            }}
-          />
-        )}
-      </InventorySection>
+      
     </section>
   );
 }
