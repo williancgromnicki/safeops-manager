@@ -15,6 +15,13 @@ function getApiBaseUrl(): string {
   ).replace(/\/+$/, '');
 }
 
+function getPortalOrigin(): string {
+  return (
+    process.env.SAFEOPS_TRMM_BASE_URL?.trim() ??
+    'https://safeops.safesys.net.br'
+  ).replace(/\/+$/, '');
+}
+
 function cleanQuery(value?: string | null): string {
   return value?.trim().toLowerCase() ?? '';
 }
@@ -45,17 +52,25 @@ async function getAuthenticatedUser() {
 }
 
 async function fetchCatalog(): Promise<CatalogItem[]> {
-  const response = await fetch(`${getApiBaseUrl()}/software/chocos/`, {
+  const apiBaseUrl = getApiBaseUrl();
+  const portalOrigin = getPortalOrigin();
+
+  const response = await fetch(`${apiBaseUrl}/software/chocos/`, {
     method: 'GET',
     headers: {
-      Accept: 'application/json',
+      Accept: 'application/json, text/plain, */*',
+      'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+      Origin: portalOrigin,
+      Referer: `${portalOrigin}/`,
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) SafeOpsManager/1.0',
     },
     cache: 'no-store',
   });
 
-  if (!response.ok) {
-    const text = await response.text();
+  const text = await response.text();
 
+  if (!response.ok) {
     throw new Error(
       `Erro ao carregar catálogo de softwares: HTTP ${response.status} - ${text.slice(
         0,
@@ -64,13 +79,19 @@ async function fetchCatalog(): Promise<CatalogItem[]> {
     );
   }
 
-  const data = (await response.json()) as CatalogItem[];
+  let data: unknown;
+
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error('Catálogo de softwares retornou JSON inválido.');
+  }
 
   if (!Array.isArray(data)) {
     throw new Error('Catálogo de softwares retornou formato inválido.');
   }
 
-  return data;
+  return data as CatalogItem[];
 }
 
 export async function GET(request: NextRequest) {
