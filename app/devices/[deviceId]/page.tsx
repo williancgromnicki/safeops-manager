@@ -157,6 +157,7 @@ export default async function DeviceDetailPage({
             <DeviceActionsMenu
               deviceId={deviceId}
               customerId={activeCustomer.customerId}
+              deviceName={device.name}
               hardwareInventoryHref={hardwareInventoryHref}
               softwareInventoryHref={softwareInventoryHref}
             />
