@@ -2,9 +2,9 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { DataTable } from '@/components/DataTable';
+import { DeviceActionsMenu } from '@/components/DeviceActionsMenu';
 import { DevicePlatformIcon } from '@/components/DevicePlatformIcon';
 import { EmptyState } from '@/components/EmptyState';
-import { DeviceActionsMenu } from '@/components/DeviceActionsMenu';
 import { SeverityBadge } from '@/components/SeverityBadge';
 import { StatCard } from '@/components/StatCard';
 import { getDeviceAlerts } from '@/lib/data/get-device-alerts';
@@ -153,16 +153,16 @@ export default async function DeviceDetailPage({
             </div>
           </div>
 
-         <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
-  <DeviceActionsMenu
-    deviceId={deviceId}
-    customerId={activeCustomer.customerId}
-    hardwareInventoryHref={hardwareInventoryHref}
-    softwareInventoryHref={softwareInventoryHref}
-  />
+          <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+            <DeviceActionsMenu
+              deviceId={deviceId}
+              customerId={activeCustomer.customerId}
+              hardwareInventoryHref={hardwareInventoryHref}
+              softwareInventoryHref={softwareInventoryHref}
+            />
 
-  <DeviceStatusBadge status={device.status} />
-</div>
+            <DeviceStatusBadge status={device.status} />
+          </div>
         </div>
       </div>
 
@@ -200,10 +200,10 @@ export default async function DeviceDetailPage({
             <p className="mt-2 text-sm text-slate-600">
               Resumo principal do equipamento. Para informações completas de
               hardware, rede, armazenamento, adaptadores e softwares instalados,
-              acesse os inventários técnicos.
+              acesse o menu de ações do dispositivo.
             </p>
           </div>
-         
+        </div>
 
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <div>
