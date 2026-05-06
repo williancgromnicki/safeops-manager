@@ -106,6 +106,14 @@ function translateJobType(value: string): string {
     return 'Remote background';
   }
 
+  if (normalized === 'remote_background_session') {
+    return 'Sessão Remote Background';
+  }
+
+  if (normalized === 'take_control_session') {
+    return 'Sessão Take Control';
+  }
+
   return value;
 }
 
@@ -163,9 +171,9 @@ function formatParameters(value: Record<string, unknown> | null): string {
     return '—';
   }
 
+  const hostname = typeof value.hostname === 'string' ? value.hostname : null;
   const packageId =
     typeof value.package_id === 'string' ? value.package_id : null;
-
   const action = typeof value.action === 'string' ? value.action : null;
 
   if (packageId) {
@@ -174,6 +182,10 @@ function formatParameters(value: Record<string, unknown> | null): string {
 
   if (action) {
     return `Ação: ${action}`;
+  }
+
+  if (hostname) {
+    return `Host: ${hostname}`;
   }
 
   return JSON.stringify(value);
@@ -204,7 +216,7 @@ export default async function RemoteJobsPage({
 
   const supabase = await createClient();
 
-  let jobsQuery = supabase
+  const { data, error } = await supabase
     .from('remote_jobs')
     .select(
       [
@@ -227,14 +239,9 @@ export default async function RemoteJobsPage({
         'customers:customers(name)',
       ].join(', '),
     )
+    .eq('customer_id', activeCustomer.customerId)
     .order('created_at', { ascending: false })
     .limit(100);
-
-  if (activeCustomer.role !== 'admin') {
-    jobsQuery = jobsQuery.eq('customer_id', activeCustomer.customerId);
-  }
-
-  const { data, error } = await jobsQuery;
 
   if (error) {
     throw new Error(`Erro ao carregar jobs remotos: ${error.message}`);
@@ -249,8 +256,12 @@ export default async function RemoteJobsPage({
           <div>
             <h2 className="section-title">Jobs remotos</h2>
             <p className="mt-2 text-sm text-slate-600">
-              Histórico de ações remotas solicitadas pelo SafeOps Manager,
-              incluindo instalações, remote background e futuras automações.
+              Histórico de ações remotas do cliente{' '}
+              <span className="font-semibold text-slate-800">
+                {activeCustomer.customerName}
+              </span>
+              , incluindo sessões remotas, instalações, remote background e
+              futuras automações.
             </p>
           </div>
 
@@ -267,7 +278,7 @@ export default async function RemoteJobsPage({
         {jobs.length === 0 ? (
           <EmptyState
             title="Nenhum job remoto registrado"
-            description="As ações remotas solicitadas pelo SafeOps Manager aparecerão aqui."
+            description="As ações remotas solicitadas pelo SafeOps Manager para este cliente aparecerão aqui."
           />
         ) : (
           <DataTable
