@@ -7,6 +7,7 @@ import { SoftwareInstallModal } from '@/components/SoftwareInstallModal';
 type DeviceActionsMenuProps = {
   deviceId: string;
   customerId: string;
+  deviceName: string;
   hardwareInventoryHref: string;
   softwareInventoryHref: string;
 };
