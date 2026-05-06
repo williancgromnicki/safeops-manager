@@ -14,6 +14,11 @@ type IncomingInstaller = {
   label?: string | null;
   installer_url?: string | null;
   expires_at?: string | null;
+  install_method?: string | null;
+  trmm_client_id?: number | string | null;
+  trmm_site_id?: number | string | null;
+  token_hours?: number | string | null;
+  download_filename?: string | null;
 };
 
 type IncomingPayload = {
@@ -65,6 +70,40 @@ function normalizeArchitecture(value?: string | null): string {
   };
 
   return map[normalized] ?? normalized;
+}
+
+function normalizeInstallMethod(value?: string | null): string {
+  const normalized = cleanString(value)?.toLowerCase() ?? 'deployment_link';
+
+  if (['deployment_link', 'linux_script', 'macos_script'].includes(normalized)) {
+    return normalized;
+  }
+
+  return 'deployment_link';
+}
+
+function normalizeNumber(value?: number | string | null): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function normalizeTokenHours(value?: number | string | null): number {
+  const parsed = normalizeNumber(value);
+
+  if (!parsed || parsed < 1) {
+    return 24;
+  }
+
+  return Math.min(Math.floor(parsed), 9999999);
 }
 
 function normalizeExpiresAt(value?: string | null): string | null {
@@ -164,6 +203,8 @@ export async function POST(request: NextRequest) {
     const results: Array<{
       client: string;
       site: string | null;
+      platform?: string;
+      installMethod?: string;
       action: 'upserted' | 'skipped';
       reason?: string;
     }> = [];
@@ -174,22 +215,40 @@ export async function POST(request: NextRequest) {
       const clientName = cleanString(installer.client);
       const siteName = cleanString(installer.site);
       const installerUrl = cleanString(installer.installer_url);
+      const installMethod = normalizeInstallMethod(installer.install_method);
+      const platform = normalizePlatform(installer.platform);
 
-      if (!clientName || !installerUrl) {
+      if (!clientName) {
         skipped += 1;
         results.push({
-          client: clientName ?? 'unknown',
+          client: 'unknown',
           site: siteName,
+          platform,
+          installMethod,
           action: 'skipped',
-          reason: 'missing_client_or_url',
+          reason: 'missing_client',
+        });
+        continue;
+      }
+
+      if (installMethod === 'deployment_link' && !installerUrl) {
+        skipped += 1;
+        results.push({
+          client: clientName,
+          site: siteName,
+          platform,
+          installMethod,
+          action: 'skipped',
+          reason: 'missing_installer_url',
         });
         continue;
       }
 
       const customerId = await resolveCustomerId(clientName);
-      const platform = normalizePlatform(installer.platform);
       const agentType = normalizeAgentType(installer.agent_type);
       const architecture = normalizeArchitecture(installer.architecture);
+      const trmmClientId = normalizeNumber(installer.trmm_client_id);
+      const trmmSiteId = normalizeNumber(installer.trmm_site_id);
 
       const defaultLabel = [
         platform === 'windows'
@@ -220,6 +279,11 @@ export async function POST(request: NextRequest) {
             expires_at: normalizeExpiresAt(installer.expires_at),
             source: 'SafeOps Sync',
             is_active: true,
+            install_method: installMethod,
+            trmm_client_id: trmmClientId,
+            trmm_site_id: trmmSiteId,
+            token_hours: normalizeTokenHours(installer.token_hours),
+            download_filename: cleanString(installer.download_filename),
             updated_at: new Date().toISOString(),
           },
           {
@@ -237,6 +301,8 @@ export async function POST(request: NextRequest) {
       results.push({
         client: clientName,
         site: siteName,
+        platform,
+        installMethod,
         action: 'upserted',
       });
     }
