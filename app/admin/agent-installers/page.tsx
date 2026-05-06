@@ -298,10 +298,6 @@ export default async function AgentInstallersPage({
             </span>
             .
           </p>
-          <p className="mt-1 text-xs text-slate-500">
-            Use estes instaladores somente nos dispositivos pertencentes a este
-            cliente.
-          </p>
         </div>
       </div>
 
