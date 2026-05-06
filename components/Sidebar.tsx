@@ -15,15 +15,81 @@ type AllowedCustomer = {
 
 type CustomersApiResponse = {
   ok: boolean;
-  customers: AllowedCustomer[];
+  customers?: AllowedCustomer[];
   error?: string;
 };
 
-const NAV_ITEMS = [
+type NavItem = {
+  href: string;
+  label: string;
+  preserveCustomer: boolean;
+  disabled?: boolean;
+};
+
+const PUBLIC_PATHS = ['/login'];
+
+const MAIN_NAV_ITEMS: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', preserveCustomer: true },
   { href: '/devices', label: 'Dispositivos', preserveCustomer: true },
   { href: '/alerts', label: 'Alertas', preserveCustomer: true },
-  { href: '/admin', label: 'Administração', preserveCustomer: false },
+];
+
+const OPERATIONS_NAV_ITEMS: NavItem[] = [
+  {
+    href: '/admin/remote-jobs',
+    label: 'Jobs remotos',
+    preserveCustomer: false,
+  },
+  {
+    href: '/operations/software-install',
+    label: 'Instalar software',
+    preserveCustomer: true,
+    disabled: true,
+  },
+  {
+    href: '/operations/actions',
+    label: 'Ações administrativas',
+    preserveCustomer: true,
+    disabled: true,
+  },
+  {
+    href: '/operations/history',
+    label: 'Histórico',
+    preserveCustomer: true,
+    disabled: true,
+  },
+];
+
+const ADMIN_NAV_ITEMS: NavItem[] = [
+  {
+    href: '/admin',
+    label: 'Painel administrativo',
+    preserveCustomer: false,
+  },
+  {
+    href: '/admin/customers',
+    label: 'Clientes e sites',
+    preserveCustomer: false,
+    disabled: true,
+  },
+  {
+    href: '/admin/users',
+    label: 'Usuários e permissões',
+    preserveCustomer: false,
+    disabled: true,
+  },
+  {
+    href: '/admin/agent-installers',
+    label: 'Instaladores de agentes',
+    preserveCustomer: true,
+    disabled: true,
+  },
+  {
+    href: '/admin/alert-contacts',
+    label: 'Contatos de alerta',
+    preserveCustomer: false,
+    disabled: true,
+  },
 ];
 
 function buildHref(
@@ -38,20 +104,152 @@ function buildHref(
   return `${href}?customerId=${encodeURIComponent(customerId)}`;
 }
 
+function normalizeRole(role?: string | null): string {
+  return role?.trim().toLowerCase() ?? '';
+}
+
+function hasRole(customers: AllowedCustomer[], roles: string[]): boolean {
+  const allowedRoles = new Set(roles);
+
+  return customers.some((customer) =>
+    allowedRoles.has(normalizeRole(customer.role)),
+  );
+}
+
+function ChevronIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      className={`h-4 w-4 transition-transform ${open ? 'rotate-90' : ''}`}
+      viewBox="0 0 20 20"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path
+        fillRule="evenodd"
+        d="M7.22 5.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L10.94 10 7.22 6.28a.75.75 0 0 1 0-1.06Z"
+        clipRule="evenodd"
+      />
+    </svg>
+  );
+}
+
+function NavLink({
+  item,
+  activeCustomerId,
+  pathname,
+  nested = false,
+}: {
+  item: NavItem;
+  activeCustomerId: string | null;
+  pathname: string;
+  nested?: boolean;
+}) {
+  const active = pathname === item.href;
+  const href = buildHref(
+    item.href,
+    activeCustomerId,
+    item.preserveCustomer,
+  );
+
+  if (item.disabled) {
+    return (
+      <span
+        className={[
+          'flex cursor-not-allowed items-center justify-between rounded-xl px-4 py-2.5 text-sm font-medium text-slate-400',
+          nested ? 'pl-7' : '',
+        ].join(' ')}
+        title="Em breve"
+      >
+        <span>{item.label}</span>
+        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+          Em breve
+        </span>
+      </span>
+    );
+  }
+
+  return (
+    <Link
+      href={href}
+      className={[
+        'block rounded-xl px-4 py-2.5 text-sm font-medium transition',
+        nested ? 'pl-7' : '',
+        active
+          ? 'bg-brand-700 text-white shadow-sm'
+          : 'text-brand-900 hover:bg-brand-50',
+      ].join(' ')}
+    >
+      {item.label}
+    </Link>
+  );
+}
+
+function NavGroup({
+  label,
+  open,
+  onToggle,
+  children,
+}: {
+  label: string;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center justify-between rounded-xl px-4 py-2.5 text-sm font-semibold text-brand-900 transition hover:bg-brand-50"
+      >
+        <span>{label}</span>
+        <ChevronIcon open={open} />
+      </button>
+
+      {open ? <ul className="mt-1 space-y-1">{children}</ul> : null}
+    </li>
+  );
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  const isPublicPath = PUBLIC_PATHS.some((path) => pathname === path);
   const customerIdFromUrl = searchParams.get('customerId');
 
   const [customers, setCustomers] = useState<AllowedCustomer[]>([]);
   const [isLoadingCustomers, setIsLoadingCustomers] = useState(true);
+  const [operationsOpen, setOperationsOpen] = useState(
+    pathname.startsWith('/operations') ||
+      pathname.startsWith('/admin/remote-jobs'),
+  );
+  const [adminOpen, setAdminOpen] = useState(pathname.startsWith('/admin'));
+
+  useEffect(() => {
+    if (
+      pathname.startsWith('/operations') ||
+      pathname.startsWith('/admin/remote-jobs')
+    ) {
+      setOperationsOpen(true);
+    }
+
+    if (pathname.startsWith('/admin')) {
+      setAdminOpen(true);
+    }
+  }, [pathname]);
 
   useEffect(() => {
     let isMounted = true;
 
     async function loadCustomers() {
+      if (isPublicPath) {
+        setCustomers([]);
+        setIsLoadingCustomers(false);
+        return;
+      }
+
       try {
         const response = await fetch('/api/customers', {
           method: 'GET',
@@ -86,7 +284,7 @@ export function Sidebar() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [isPublicPath]);
 
   const activeCustomerId = useMemo(() => {
     if (customerIdFromUrl) {
@@ -102,6 +300,9 @@ export function Sidebar() {
     return customers[0]?.customerId ?? null;
   }, [customerIdFromUrl, customers]);
 
+  const canUseOperations = hasRole(customers, ['admin', 'client']);
+  const canUseAdministration = hasRole(customers, ['admin', 'client']);
+
   const handleCustomerChange = (customerId: string) => {
     const params = new URLSearchParams(searchParams.toString());
 
@@ -116,6 +317,10 @@ export function Sidebar() {
 
     router.push(`${nextPathname}?${params.toString()}`);
   };
+
+  if (isPublicPath) {
+    return null;
+  }
 
   return (
     <aside className="hidden min-h-screen w-72 shrink-0 flex-col border-r border-surface-border bg-white/90 p-6 shadow-sm lg:flex">
@@ -155,29 +360,53 @@ export function Sidebar() {
         </div>
 
         <ul className="space-y-2">
-          {NAV_ITEMS.map((item) => {
-            const active = pathname === item.href;
-            const href = buildHref(
-              item.href,
-              activeCustomerId,
-              item.preserveCustomer,
-            );
+          {MAIN_NAV_ITEMS.map((item) => (
+            <li key={item.href}>
+              <NavLink
+                item={item}
+                activeCustomerId={activeCustomerId}
+                pathname={pathname}
+              />
+            </li>
+          ))}
 
-            return (
-              <li key={item.href}>
-                <Link
-                  href={href}
-                  className={`block rounded-xl px-4 py-2.5 text-sm font-medium transition ${
-                    active
-                      ? 'bg-brand-700 text-white shadow-sm'
-                      : 'text-brand-900 hover:bg-brand-50'
-                  }`}
-                >
-                  {item.label}
-                </Link>
-              </li>
-            );
-          })}
+          {canUseOperations ? (
+            <NavGroup
+              label="Operações"
+              open={operationsOpen}
+              onToggle={() => setOperationsOpen((current) => !current)}
+            >
+              {OPERATIONS_NAV_ITEMS.map((item) => (
+                <li key={item.href}>
+                  <NavLink
+                    item={item}
+                    activeCustomerId={activeCustomerId}
+                    pathname={pathname}
+                    nested
+                  />
+                </li>
+              ))}
+            </NavGroup>
+          ) : null}
+
+          {canUseAdministration ? (
+            <NavGroup
+              label="Administração"
+              open={adminOpen}
+              onToggle={() => setAdminOpen((current) => !current)}
+            >
+              {ADMIN_NAV_ITEMS.map((item) => (
+                <li key={item.href}>
+                  <NavLink
+                    item={item}
+                    activeCustomerId={activeCustomerId}
+                    pathname={pathname}
+                    nested
+                  />
+                </li>
+              ))}
+            </NavGroup>
+          ) : null}
         </ul>
       </div>
 
