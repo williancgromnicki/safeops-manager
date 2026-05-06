@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
+import { SoftwareInstallModal } from '@/components/SoftwareInstallModal';
 
 type DeviceActionsMenuProps = {
   deviceId: string;
