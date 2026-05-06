@@ -19,6 +19,9 @@ type IncomingInstaller = {
   trmm_site_id?: number | string | null;
   token_hours?: number | string | null;
   download_filename?: string | null;
+  download_token_key?: string | null;
+  auth_token_id?: string | null;
+  agent_version?: string | null;
 };
 
 type IncomingPayload = {
@@ -265,32 +268,35 @@ export async function POST(request: NextRequest) {
 
       const label = cleanString(installer.label) ?? defaultLabel;
 
-      const { error: upsertError } = await supabaseAdmin
-        .from('agent_installers')
-        .upsert(
-          {
-            customer_id: customerId,
-            site_name: siteName,
-            platform,
-            agent_type: agentType,
-            architecture,
-            label,
-            installer_url: installerUrl,
-            expires_at: normalizeExpiresAt(installer.expires_at),
-            source: 'SafeOps Sync',
-            is_active: true,
-            install_method: installMethod,
-            trmm_client_id: trmmClientId,
-            trmm_site_id: trmmSiteId,
-            token_hours: normalizeTokenHours(installer.token_hours),
-            download_filename: cleanString(installer.download_filename),
-            updated_at: new Date().toISOString(),
-          },
-          {
-            onConflict:
-              'customer_id,site_name,platform,agent_type,architecture',
-          },
-        );
+const { error: upsertError } = await supabaseAdmin
+  .from('agent_installers')
+  .upsert(
+    {
+      customer_id: customerId,
+      site_name: siteName,
+      platform,
+      agent_type: agentType,
+      architecture,
+      label,
+      installer_url: installerUrl,
+      expires_at: normalizeExpiresAt(installer.expires_at),
+      source: 'SafeOps Sync',
+      is_active: true,
+      install_method: installMethod,
+      trmm_client_id: trmmClientId,
+      trmm_site_id: trmmSiteId,
+      token_hours: normalizeTokenHours(installer.token_hours),
+      download_filename: cleanString(installer.download_filename),
+      download_token_key: cleanString(installer.download_token_key),
+      auth_token_id: cleanString(installer.auth_token_id),
+      agent_version: cleanString(installer.agent_version) ?? '2.10.0',
+      updated_at: new Date().toISOString(),
+    },
+    {
+      onConflict:
+        'customer_id,site_name,platform,agent_type,architecture',
+    },
+  );;
 
       if (upsertError) {
         throw new Error(`Erro ao sincronizar instalador: ${upsertError.message}`);
