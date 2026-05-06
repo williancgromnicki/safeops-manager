@@ -12,58 +12,182 @@ type AgentInstallersPageProps = {
   }>;
 };
 
-type CustomerInstallerRow = {
+type AgentInstallerRow = {
   id: string;
-  name: string;
-  slug: string | null;
-  trmm_windows_agent_url: string | null;
-  trmm_linux_agent_url: string | null;
-  trmm_macos_agent_url: string | null;
-  notes: string | null;
+  site_name: string | null;
+  platform: string;
+  agent_type: string;
+  architecture: string;
+  label: string;
+  installer_url: string;
+  expires_at: string | null;
+  source: string | null;
+  is_active: boolean;
+  updated_at: string | null;
 };
 
-function hasValue(value?: string | null): boolean {
-  return Boolean(value?.trim());
+function formatDateTime(value?: string | null): string {
+  if (!value) {
+    return 'Sem expiração informada';
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString('pt-BR');
 }
 
-function InstallerCard({
-  title,
-  description,
-  url,
-  disabledMessage,
-}: {
-  title: string;
-  description: string;
-  url?: string | null;
-  disabledMessage: string;
-}) {
-  const available = hasValue(url);
+function isExpired(value?: string | null): boolean {
+  if (!value) {
+    return false;
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return false;
+  }
+
+  return date.getTime() < Date.now();
+}
+
+function isExpiringSoon(value?: string | null): boolean {
+  if (!value) {
+    return false;
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return false;
+  }
+
+  const diffMs = date.getTime() - Date.now();
+  const fiveDaysMs = 5 * 24 * 60 * 60 * 1000;
+
+  return diffMs > 0 && diffMs <= fiveDaysMs;
+}
+
+function platformLabel(value: string): string {
+  const normalized = value.toLowerCase();
+
+  const labels: Record<string, string> = {
+    windows: 'Windows',
+    linux: 'Linux',
+    macos: 'macOS',
+  };
+
+  return labels[normalized] ?? value;
+}
+
+function agentTypeLabel(value: string): string {
+  const normalized = value.toLowerCase();
+
+  const labels: Record<string, string> = {
+    server: 'Servidor',
+    workstation: 'Estação de trabalho',
+  };
+
+  return labels[normalized] ?? value;
+}
+
+function ExpiryBadge({ expiresAt }: { expiresAt?: string | null }) {
+  if (isExpired(expiresAt)) {
+    return (
+      <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 ring-1 ring-rose-600/20">
+        Expirado
+      </span>
+    );
+  }
+
+  if (isExpiringSoon(expiresAt)) {
+    return (
+      <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 ring-1 ring-amber-600/20">
+        Expira em breve
+      </span>
+    );
+  }
+
+  return (
+    <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-600/20">
+      Disponível
+    </span>
+  );
+}
+
+function InstallerCard({ installer }: { installer: AgentInstallerRow }) {
+  const expired = isExpired(installer.expires_at);
 
   return (
     <div className="rounded-2xl border border-surface-border bg-white p-5 shadow-sm">
-      <div>
-        <h3 className="text-lg font-semibold text-brand-900">{title}</h3>
-        <p className="mt-2 text-sm leading-relaxed text-slate-600">
-          {description}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-lg font-semibold text-brand-900">
+            {installer.label}
+          </h3>
+
+          <p className="mt-2 text-sm leading-relaxed text-slate-600">
+            {platformLabel(installer.platform)} •{' '}
+            {agentTypeLabel(installer.agent_type)} •{' '}
+            {installer.architecture}
+          </p>
+
+          {installer.site_name ? (
+            <p className="mt-1 text-xs text-slate-500">
+              Site: {installer.site_name}
+            </p>
+          ) : null}
+        </div>
+
+        <ExpiryBadge expiresAt={installer.expires_at} />
+      </div>
+
+      <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Validade
+        </p>
+        <p className="mt-1 text-sm font-medium text-slate-800">
+          {formatDateTime(installer.expires_at)}
         </p>
       </div>
 
-      <div className="mt-5">
-        {available ? (
-          <a
-            href={url ?? '#'}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center justify-center rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-800"
-          >
-            Baixar instalador
-          </a>
-        ) : (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            {disabledMessage}
-          </div>
-        )}
+      <div className="mt-5 flex flex-wrap gap-2">
+        <a
+          href={installer.installer_url}
+          target="_blank"
+          rel="noreferrer"
+          className={[
+            'inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold shadow-sm transition',
+            expired
+              ? 'pointer-events-none bg-slate-200 text-slate-500'
+              : 'bg-brand-700 text-white hover:bg-brand-800',
+          ].join(' ')}
+        >
+          Abrir instalador
+        </a>
+
+        <a
+          href={installer.installer_url}
+          target="_blank"
+          rel="noreferrer"
+          className={[
+            'inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50',
+            expired ? 'pointer-events-none opacity-50' : '',
+          ].join(' ')}
+        >
+          Copiar/baixar
+        </a>
       </div>
+
+      {expired ? (
+        <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          Este instalador expirou. Solicite a geração de um novo link de
+          implantação.
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -107,40 +231,33 @@ export default async function AgentInstallersPage({
   const supabase = await createClient();
 
   const { data, error } = await supabase
-    .from('customers')
+    .from('agent_installers')
     .select(
       [
         'id',
-        'name',
-        'slug',
-        'trmm_windows_agent_url',
-        'trmm_linux_agent_url',
-        'trmm_macos_agent_url',
-        'notes',
+        'site_name',
+        'platform',
+        'agent_type',
+        'architecture',
+        'label',
+        'installer_url',
+        'expires_at',
+        'source',
+        'is_active',
+        'updated_at',
       ].join(', '),
     )
-    .eq('id', activeCustomer.customerId)
-    .maybeSingle<CustomerInstallerRow>();
+    .eq('customer_id', activeCustomer.customerId)
+    .eq('is_active', true)
+    .order('site_name', { ascending: true })
+    .order('platform', { ascending: true })
+    .order('agent_type', { ascending: true });
 
   if (error) {
     throw new Error(`Erro ao carregar instaladores: ${error.message}`);
   }
 
-  if (!data) {
-    return (
-      <section className="space-y-6">
-        <EmptyState
-          title="Cliente não encontrado"
-          description="Não foi possível localizar os dados de implantação deste cliente."
-        />
-      </section>
-    );
-  }
-
-  const hasAnyInstaller =
-    hasValue(data.trmm_windows_agent_url) ||
-    hasValue(data.trmm_linux_agent_url) ||
-    hasValue(data.trmm_macos_agent_url);
+  const installers = (data ?? []) as unknown as AgentInstallerRow[];
 
   return (
     <section className="space-y-6">
@@ -162,46 +279,18 @@ export default async function AgentInstallersPage({
         </div>
       </div>
 
-      {!hasAnyInstaller ? (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-800">
-          Nenhum instalador foi cadastrado para este cliente ainda. Solicite à
-          Safesys a liberação dos links de implantação.
+      {installers.length === 0 ? (
+        <EmptyState
+          title="Nenhum instalador disponível"
+          description="Ainda não há instaladores disponíveis para este cliente."
+        />
+      ) : (
+        <div className="grid gap-5 xl:grid-cols-2">
+          {installers.map((installer) => (
+            <InstallerCard key={installer.id} installer={installer} />
+          ))}
         </div>
-      ) : null}
-
-      <div className="grid gap-5 xl:grid-cols-3">
-        <InstallerCard
-          title="Windows"
-          description="Instalador para estações e servidores Microsoft Windows."
-          url={data.trmm_windows_agent_url}
-          disabledMessage="Instalador Windows ainda não cadastrado para este cliente."
-        />
-
-        <InstallerCard
-          title="Linux"
-          description="Instalador para servidores e endpoints Linux compatíveis."
-          url={data.trmm_linux_agent_url}
-          disabledMessage="Instalador Linux ainda não cadastrado para este cliente."
-        />
-
-        <InstallerCard
-          title="macOS"
-          description="Instalador para dispositivos Apple compatíveis."
-          url={data.trmm_macos_agent_url}
-          disabledMessage="Instalador macOS ainda não cadastrado para este cliente."
-        />
-      </div>
-
-      {data.notes ? (
-        <div className="rounded-2xl border border-surface-border bg-white p-5 shadow-sm">
-          <h3 className="text-lg font-semibold text-brand-900">
-            Observações de implantação
-          </h3>
-          <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-600">
-            {data.notes}
-          </p>
-        </div>
-      ) : null}
+      )}
     </section>
   );
 }
