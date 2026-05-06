@@ -129,13 +129,11 @@ export default async function DevicesPage({ searchParams }: DevicesPageProps) {
           </h2>
 
           <p className="mt-2 text-sm text-slate-600">
-            Inventário operacional sincronizado com o Tactical RMM. O status
-            online/offline considera o último check-in registrado pelo agente.
+            Inventário operacional sincronizado com os agentes SafeOps. O status online/offline considera o último check-in registrado pelo dispositivo..
           </p>
 
           <p className="mt-1 text-xs text-slate-500">
-            A sincronização automática ocorre a cada 5 minutos. O botão ao lado
-            permite forçar uma atualização manual do inventário.
+            A sincronização automática ocorre periodicamente. O botão ao lado permite solicitar uma atualização manual do inventário.
           </p>
         </div>
 
