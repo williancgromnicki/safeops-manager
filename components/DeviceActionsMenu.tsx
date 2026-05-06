@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
+
 import { SoftwareInstallModal } from '@/components/SoftwareInstallModal';
 
 type DeviceActionsMenuProps = {
@@ -68,6 +69,7 @@ async function parseRemoteResponse(
 export function DeviceActionsMenu({
   deviceId,
   customerId,
+  deviceName,
   hardwareInventoryHref,
   softwareInventoryHref,
 }: DeviceActionsMenuProps) {
@@ -75,6 +77,7 @@ export function DeviceActionsMenu({
   const [isOpen, setIsOpen] = useState(false);
   const [isOpeningRemote, setIsOpeningRemote] = useState(false);
   const [isOpeningBackground, setIsOpeningBackground] = useState(false);
+  const [isSoftwareModalOpen, setIsSoftwareModalOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -135,86 +138,109 @@ export function DeviceActionsMenu({
   }
 
   return (
-    <div ref={wrapperRef} className="relative">
-      <button
-        type="button"
-        onClick={() => setIsOpen((current) => !current)}
-        className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50"
-      >
-        <GearIcon />
-        Ações
-      </button>
+    <>
+      <div ref={wrapperRef} className="relative">
+        <button
+          type="button"
+          onClick={() => setIsOpen((current) => !current)}
+          className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50"
+        >
+          <GearIcon />
+          Ações
+        </button>
 
-      {isOpen ? (
-        <div className="absolute right-0 z-30 mt-2 w-64 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
-          <div className="border-b border-slate-100 px-4 py-3">
-            <p className="text-sm font-semibold text-slate-900">
-              Ações do dispositivo
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              Operações, acesso remoto e inventários.
-            </p>
-          </div>
-
-          <div className="p-2">
-            <button
-              type="button"
-              onClick={() =>
-                openRemoteUrl(
-                  `/api/devices/${encodeURIComponent(deviceId)}/remote`,
-                  'remote',
-                )
-              }
-              disabled={isOpeningRemote || isOpeningBackground}
-              className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-brand-50 hover:text-brand-800 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isOpeningRemote ? 'Abrindo acesso remoto...' : 'Acesso remoto'}
-            </button>
-
-            <button
-              type="button"
-              onClick={() =>
-                openRemoteUrl(
-                  `/api/devices/${encodeURIComponent(
-                    deviceId,
-                  )}/remote-background`,
-                  'background',
-                )
-              }
-              disabled={isOpeningRemote || isOpeningBackground}
-              className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-brand-50 hover:text-brand-800 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isOpeningBackground
-                ? 'Abrindo Remote Background...'
-                : 'Remote Background'}
-            </button>
-
-            <div className="my-2 border-t border-slate-100" />
-
-            <Link
-              href={hardwareInventoryHref}
-              onClick={() => setIsOpen(false)}
-              className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-slate-700 transition hover:bg-brand-50 hover:text-brand-800"
-            >
-              Inventário de hardware
-            </Link>
-
-            <Link
-              href={softwareInventoryHref}
-              onClick={() => setIsOpen(false)}
-              className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-slate-700 transition hover:bg-brand-50 hover:text-brand-800"
-            >
-              Inventário de software
-            </Link>
-          </div>
-
-          {message ? (
-            <div className="border-t border-rose-100 bg-rose-50 px-4 py-3 text-xs text-rose-700">
-              {message}
+        {isOpen ? (
+          <div className="absolute right-0 z-30 mt-2 w-64 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
+            <div className="border-b border-slate-100 px-4 py-3">
+              <p className="text-sm font-semibold text-slate-900">
+                Ações do dispositivo
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Operações, acesso remoto e inventários.
+              </p>
             </div>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
+
+            <div className="p-2">
+              <button
+                type="button"
+                onClick={() =>
+                  openRemoteUrl(
+                    `/api/devices/${encodeURIComponent(deviceId)}/remote`,
+                    'remote',
+                  )
+                }
+                disabled={isOpeningRemote || isOpeningBackground}
+                className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-brand-50 hover:text-brand-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isOpeningRemote ? 'Abrindo acesso remoto...' : 'Acesso remoto'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  openRemoteUrl(
+                    `/api/devices/${encodeURIComponent(
+                      deviceId,
+                    )}/remote-background`,
+                    'background',
+                  )
+                }
+                disabled={isOpeningRemote || isOpeningBackground}
+                className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-brand-50 hover:text-brand-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isOpeningBackground
+                  ? 'Abrindo Remote Background...'
+                  : 'Remote Background'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOpen(false);
+                  setMessage(null);
+                  setIsSoftwareModalOpen(true);
+                }}
+                disabled={isOpeningRemote || isOpeningBackground}
+                className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-brand-50 hover:text-brand-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Instalar software
+              </button>
+
+              <div className="my-2 border-t border-slate-100" />
+
+              <Link
+                href={hardwareInventoryHref}
+                onClick={() => setIsOpen(false)}
+                className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-slate-700 transition hover:bg-brand-50 hover:text-brand-800"
+              >
+                Inventário de hardware
+              </Link>
+
+              <Link
+                href={softwareInventoryHref}
+                onClick={() => setIsOpen(false)}
+                className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-slate-700 transition hover:bg-brand-50 hover:text-brand-800"
+              >
+                Inventário de software
+              </Link>
+            </div>
+
+            {message ? (
+              <div className="border-t border-rose-100 bg-rose-50 px-4 py-3 text-xs text-rose-700">
+                {message}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+
+      <SoftwareInstallModal
+        isOpen={isSoftwareModalOpen}
+        onClose={() => setIsSoftwareModalOpen(false)}
+        deviceId={deviceId}
+        customerId={customerId}
+        deviceName={deviceName}
+      />
+    </>
   );
 }
