@@ -81,7 +81,6 @@ const ADMIN_NAV_ITEMS: NavItem[] = [
     href: '/admin/agent-installers',
     label: 'Instaladores de agentes',
     preserveCustomer: true,
-    disabled: true,
   },
   {
     href: '/admin/alert-contacts',
