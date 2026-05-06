@@ -19,16 +19,19 @@ type AgentInstallerRow = {
   agent_type: string;
   architecture: string;
   label: string;
-  installer_url: string;
+  installer_url: string | null;
   expires_at: string | null;
   source: string | null;
+  install_method: string | null;
+  token_hours: number | null;
+  download_filename: string | null;
   is_active: boolean;
   updated_at: string | null;
 };
 
 function formatDateTime(value?: string | null): string {
   if (!value) {
-    return 'Sem expiração informada';
+    return 'Gerado sob demanda';
   }
 
   const date = new Date(value);
@@ -94,7 +97,29 @@ function agentTypeLabel(value: string): string {
   return labels[normalized] ?? value;
 }
 
+function actionLabel(installer: AgentInstallerRow): string {
+  const method = installer.install_method ?? 'deployment_link';
+
+  if (method === 'linux_script') {
+    return 'Baixar script .sh';
+  }
+
+  if (method === 'macos_script') {
+    return 'Baixar script macOS';
+  }
+
+  return 'Abrir instalador';
+}
+
 function ExpiryBadge({ expiresAt }: { expiresAt?: string | null }) {
+  if (!expiresAt) {
+    return (
+      <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 ring-1 ring-blue-600/20">
+        Sob demanda
+      </span>
+    );
+  }
+
   if (isExpired(expiresAt)) {
     return (
       <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 ring-1 ring-rose-600/20">
@@ -120,6 +145,9 @@ function ExpiryBadge({ expiresAt }: { expiresAt?: string | null }) {
 
 function InstallerCard({ installer }: { installer: AgentInstallerRow }) {
   const expired = isExpired(installer.expires_at);
+  const downloadHref = `/api/agent-installers/${encodeURIComponent(
+    installer.id,
+  )}/download`;
 
   return (
     <div className="rounded-2xl border border-surface-border bg-white p-5 shadow-sm">
@@ -152,11 +180,18 @@ function InstallerCard({ installer }: { installer: AgentInstallerRow }) {
         <p className="mt-1 text-sm font-medium text-slate-800">
           {formatDateTime(installer.expires_at)}
         </p>
+
+        {installer.install_method === 'linux_script' ? (
+          <p className="mt-2 text-xs text-slate-500">
+            O script é gerado no momento do download e possui validade
+            temporária.
+          </p>
+        ) : null}
       </div>
 
       <div className="mt-5 flex flex-wrap gap-2">
         <a
-          href={installer.installer_url}
+          href={downloadHref}
           target="_blank"
           rel="noreferrer"
           className={[
@@ -166,19 +201,7 @@ function InstallerCard({ installer }: { installer: AgentInstallerRow }) {
               : 'bg-brand-700 text-white hover:bg-brand-800',
           ].join(' ')}
         >
-          Abrir instalador
-        </a>
-
-        <a
-          href={installer.installer_url}
-          target="_blank"
-          rel="noreferrer"
-          className={[
-            'inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50',
-            expired ? 'pointer-events-none opacity-50' : '',
-          ].join(' ')}
-        >
-          Copiar/baixar
+          {actionLabel(installer)}
         </a>
       </div>
 
@@ -243,6 +266,9 @@ export default async function AgentInstallersPage({
         'installer_url',
         'expires_at',
         'source',
+        'install_method',
+        'token_hours',
+        'download_filename',
         'is_active',
         'updated_at',
       ].join(', '),
@@ -271,6 +297,10 @@ export default async function AgentInstallersPage({
               {activeCustomer.customerName}
             </span>
             .
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            Use estes instaladores somente nos dispositivos pertencentes a este
+            cliente.
           </p>
         </div>
       </div>
