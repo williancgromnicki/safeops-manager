@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 import { DataTable } from '@/components/DataTable';
 import { DevicePlatformIcon } from '@/components/DevicePlatformIcon';
 import { EmptyState } from '@/components/EmptyState';
-import { RemoteAccessButton } from '@/components/RemoteAccessButton';
+import { DeviceActionsMenu } from '@/components/DeviceActionsMenu';
 import { SeverityBadge } from '@/components/SeverityBadge';
 import { StatCard } from '@/components/StatCard';
 import { getDeviceAlerts } from '@/lib/data/get-device-alerts';
@@ -153,14 +153,16 @@ export default async function DeviceDetailPage({
             </div>
           </div>
 
-          <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
-            <RemoteAccessButton
-              deviceId={deviceId}
-              customerId={activeCustomer.customerId}
-            />
+         <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+  <DeviceActionsMenu
+    deviceId={deviceId}
+    customerId={activeCustomer.customerId}
+    hardwareInventoryHref={hardwareInventoryHref}
+    softwareInventoryHref={softwareInventoryHref}
+  />
 
-            <DeviceStatusBadge status={device.status} />
-          </div>
+  <DeviceStatusBadge status={device.status} />
+</div>
         </div>
       </div>
 
@@ -201,23 +203,7 @@ export default async function DeviceDetailPage({
               acesse os inventários técnicos.
             </p>
           </div>
-
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href={hardwareInventoryHref}
-              className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
-            >
-              Abrir inventário completo
-            </Link>
-
-            <Link
-              href={softwareInventoryHref}
-              className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
-            >
-              Inventário de software
-            </Link>
-          </div>
-        </div>
+         
 
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <div>
