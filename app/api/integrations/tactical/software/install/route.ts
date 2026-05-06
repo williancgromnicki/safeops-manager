@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSoftwareByKey } from "@/lib/software-whitelist";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 const TRMM_API_URL = process.env.TRMM_API_URL;
 const TRMM_API_KEY = process.env.TRMM_API_KEY;
@@ -9,7 +10,8 @@ function classifyInstallResult(output: string) {
 
   if (
     normalized.includes("installed 1/1 packages") ||
-    normalized.includes("the install of") && normalized.includes("was successful")
+    (normalized.includes("the install of") &&
+      normalized.includes("was successful"))
   ) {
     return "success";
   }
@@ -27,6 +29,25 @@ function classifyInstallResult(output: string) {
   }
 
   return "unknown";
+}
+
+function classifyFinalResult(
+  installStatus: string,
+  validationOutput?: string | null
+) {
+  const normalizedValidation = (validationOutput ?? "").toLowerCase();
+
+  if (normalizedValidation.includes("installed")) {
+    return installStatus === "already_installed"
+      ? "already_installed"
+      : "success";
+  }
+
+  if (normalizedValidation.includes("not_found")) {
+    return installStatus === "already_installed" ? "failed" : installStatus;
+  }
+
+  return installStatus;
 }
 
 async function runTrmmCommand(agentId: string, cmd: string, timeout: number) {
@@ -55,7 +76,7 @@ async function runTrmmCommand(agentId: string, cmd: string, timeout: number) {
   try {
     output = JSON.parse(text);
   } catch {
-    // mantém texto bruto
+    // Mantém texto bruto caso não seja JSON válido.
   }
 
   return {
@@ -66,6 +87,8 @@ async function runTrmmCommand(agentId: string, cmd: string, timeout: number) {
 }
 
 export async function POST(request: NextRequest) {
+  let jobId: string | null = null;
+
   try {
     const body = await request.json();
 
@@ -95,6 +118,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const { data: createdJob, error: createJobError } = await supabaseAdmin
+      .from("software_install_jobs")
+      .insert({
+        agent_id: agentId,
+        software_key: software.key,
+        software_label: software.label,
+        package_name: software.packageName,
+        status: "running",
+      })
+      .select("id")
+      .single();
+
+    if (createJobError) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Erro ao criar registro da instalação.",
+          details: createJobError.message,
+        },
+        { status: 500 }
+      );
+    }
+
+    jobId = createdJob.id;
+
     const installResult = await runTrmmCommand(
       agentId,
       software.installCmd,
@@ -103,29 +151,54 @@ export async function POST(request: NextRequest) {
 
     const installStatus = classifyInstallResult(installResult.output);
 
-    let validationResult = null;
+    let validationResult: {
+      ok: boolean;
+      status: number;
+      output: string;
+    } | null = null;
 
     if (software.validateCmd) {
-      validationResult = await runTrmmCommand(
-        agentId,
-        software.validateCmd,
-        60
+      validationResult = await runTrmmCommand(agentId, software.validateCmd, 60);
+    }
+
+    const finalStatus = classifyFinalResult(
+      installStatus,
+      validationResult?.output
+    );
+
+    const { error: updateJobError } = await supabaseAdmin
+      .from("software_install_jobs")
+      .update({
+        status: finalStatus,
+        install_output: installResult.output,
+        validation_output: validationResult?.output ?? null,
+        error_message:
+          finalStatus === "failed"
+            ? "A instalação ou validação retornou falha."
+            : null,
+        finished_at: new Date().toISOString(),
+      })
+      .eq("id", jobId);
+
+    if (updateJobError) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "Instalação executada, mas houve erro ao atualizar o histórico.",
+          details: updateJobError.message,
+          job_id: jobId,
+          status: finalStatus,
+          install: installResult,
+          validation: validationResult,
+        },
+        { status: 500 }
       );
     }
 
-    const validationOutput = validationResult?.output?.toLowerCase() ?? "";
-
-    const finalStatus =
-      validationOutput.includes("installed") ||
-      installStatus === "success" ||
-      installStatus === "already_installed"
-        ? installStatus === "already_installed"
-          ? "already_installed"
-          : "success"
-        : installStatus;
-
     return NextResponse.json({
       ok: finalStatus === "success" || finalStatus === "already_installed",
+      job_id: jobId,
       status: finalStatus,
       software: {
         key: software.key,
@@ -136,9 +209,24 @@ export async function POST(request: NextRequest) {
       validation: validationResult,
     });
   } catch (error) {
+    if (jobId) {
+      await supabaseAdmin
+        .from("software_install_jobs")
+        .update({
+          status: "failed",
+          error_message:
+            error instanceof Error
+              ? error.message
+              : "Erro desconhecido ao instalar software.",
+          finished_at: new Date().toISOString(),
+        })
+        .eq("id", jobId);
+    }
+
     return NextResponse.json(
       {
         ok: false,
+        job_id: jobId,
         error:
           error instanceof Error
             ? error.message
