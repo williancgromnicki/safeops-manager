@@ -53,6 +53,13 @@ function getApiBaseUrl(): string {
   ).replace(/\/+$/, '');
 }
 
+function getPortalOrigin(): string {
+  return (
+    process.env.SAFEOPS_TRMM_BASE_URL?.trim() ??
+    'https://safeops.safesys.net.br'
+  ).replace(/\/+$/, '');
+}
+
 function isExpired(value?: string | null): boolean {
   if (!value) {
     return false;
@@ -185,10 +192,19 @@ function buildLinuxPayload(installer: InstallerRow) {
 }
 
 async function generateLinuxInstaller(installer: InstallerRow) {
-  const response = await fetch(`${getApiBaseUrl()}/agents/installer/`, {
+  const apiBaseUrl = getApiBaseUrl();
+  const portalOrigin = getPortalOrigin();
+
+  const response = await fetch(`${apiBaseUrl}/agents/installer/`, {
     method: 'POST',
     headers: {
+      Accept: 'application/json, text/plain, */*',
+      'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
       'Content-Type': 'application/json',
+      Origin: portalOrigin,
+      Referer: `${portalOrigin}/`,
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) SafeOpsManager/1.0',
     },
     cache: 'no-store',
     body: JSON.stringify(buildLinuxPayload(installer)),
@@ -207,7 +223,10 @@ async function generateLinuxInstaller(installer: InstallerRow) {
 
   if (!text.trim().startsWith('#!')) {
     throw new Error(
-      'A API de instalação retornou uma resposta inesperada para o script Linux.',
+      `A API de instalação retornou uma resposta inesperada: ${text.slice(
+        0,
+        300,
+      )}`,
     );
   }
 
