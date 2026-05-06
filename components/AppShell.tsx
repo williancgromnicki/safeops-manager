@@ -1,7 +1,7 @@
 'use client';
 
-import { ReactNode, Suspense } from 'react';
-import { usePathname } from 'next/navigation';
+import { ReactNode, Suspense, useEffect } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 
 import { Header } from '@/components/Header';
 import { Sidebar } from '@/components/Sidebar';
@@ -11,7 +11,7 @@ type AppShellProps = {
   children: ReactNode;
 };
 
-const PUBLIC_PATHS = ['/login'];
+const PUBLIC_PATHS = ['/login', '/change-password'];
 
 function SidebarFallback() {
   return (
@@ -42,8 +42,47 @@ export function AppShell({
   children,
 }: AppShellProps) {
   const pathname = usePathname();
+  const router = useRouter();
 
   const isPublicPath = PUBLIC_PATHS.some((path) => pathname === path);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function checkPasswordStatus() {
+      if (isPublicPath) {
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/me/password-status', {
+          method: 'GET',
+          cache: 'no-store',
+        });
+
+        if (response.status === 401) {
+          return;
+        }
+
+        const data = (await response.json()) as {
+          ok: boolean;
+          mustChangePassword?: boolean;
+        };
+
+        if (isMounted && data.ok && data.mustChangePassword) {
+          router.replace('/change-password');
+        }
+      } catch {
+        // Não bloqueia a renderização caso a verificação falhe.
+      }
+    }
+
+    checkPasswordStatus();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isPublicPath, router]);
 
   if (isPublicPath) {
     return <div className="min-h-screen bg-surface-light">{children}</div>;
