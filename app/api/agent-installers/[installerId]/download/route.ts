@@ -27,6 +27,9 @@ type InstallerRow = {
   token_hours: number | null;
   download_filename: string | null;
   is_active: boolean;
+  download_token_key: string | null;
+  auth_token_id: string | null;
+  agent_version: string | null;
 };
 
 type AccessRow = {
@@ -38,7 +41,6 @@ const allowedRoles = new Set(['admin', 'client']);
 
 function cleanString(value?: string | null): string | null {
   const cleaned = value?.trim();
-
   return cleaned ? cleaned : null;
 }
 
@@ -53,10 +55,10 @@ function getApiBaseUrl(): string {
   ).replace(/\/+$/, '');
 }
 
-function getPortalOrigin(): string {
+function getAgentDownloadBaseUrl(): string {
   return (
-    process.env.SAFEOPS_TRMM_BASE_URL?.trim() ??
-    'https://safeops.safesys.net.br'
+    process.env.SAFEOPS_AGENT_DOWNLOAD_BASE_URL?.trim() ??
+    'https://agents.tacticalrmm.com'
   ).replace(/\/+$/, '');
 }
 
@@ -155,6 +157,9 @@ async function fetchInstaller(installerId: string): Promise<InstallerRow | null>
         'token_hours',
         'download_filename',
         'is_active',
+        'download_token_key',
+        'auth_token_id',
+        'agent_version',
       ].join(', '),
     )
     .eq('id', installerId)
@@ -168,69 +173,68 @@ async function fetchInstaller(installerId: string): Promise<InstallerRow | null>
   return data ?? null;
 }
 
-function buildLinuxPayload(installer: InstallerRow) {
+function shellEscape(value: string): string {
+  return value.replace(/'/g, `'\\''`);
+}
+
+function buildLinuxScript(installer: InstallerRow): string {
   if (!installer.trmm_client_id || !installer.trmm_site_id) {
     throw new Error('Instalador sem vínculo técnico de cliente/site.');
   }
 
-  return {
-    installMethod: 'bash',
-    client: installer.trmm_client_id,
-    site: installer.trmm_site_id,
-    expires: installer.token_hours ?? 24,
-    agenttype: installer.agent_type,
-    power: 0,
-    rdp: 0,
-    ping: 0,
-    goarch: installer.architecture,
-    api: getApiBaseUrl(),
-    fileName:
-      installer.download_filename ??
-      `safeops-${installer.platform}-${installer.agent_type}-${installer.architecture}.sh`,
-    plat: 'linux',
-  };
-}
+  const downloadToken = cleanString(installer.download_token_key);
+  const authToken = cleanString(installer.auth_token_id);
 
-async function generateLinuxInstaller(installer: InstallerRow) {
+  if (!downloadToken || !authToken) {
+    throw new Error('Instalador sem tokens técnicos para geração do script.');
+  }
+
+  const version = cleanString(installer.agent_version) ?? '2.10.0';
+  const arch = cleanString(installer.architecture) ?? 'amd64';
+  const agentType = cleanString(installer.agent_type) ?? 'server';
   const apiBaseUrl = getApiBaseUrl();
-  const portalOrigin = getPortalOrigin();
+  const downloadBaseUrl = getAgentDownloadBaseUrl();
 
-  const response = await fetch(`${apiBaseUrl}/agents/installer/`, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json, text/plain, */*',
-      'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
-      'Content-Type': 'application/json',
-      Origin: portalOrigin,
-      Referer: `${portalOrigin}/`,
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) SafeOpsManager/1.0',
-    },
-    cache: 'no-store',
-    body: JSON.stringify(buildLinuxPayload(installer)),
-  });
+  const binaryName = `tacticalagent-v${version}-linux-${arch}`;
+  const downloadUrl =
+    `${downloadBaseUrl}/api/v2/agents/` +
+    `?version=${encodeURIComponent(version)}` +
+    `&arch=${encodeURIComponent(arch)}` +
+    `&token=${encodeURIComponent(downloadToken)}` +
+    `&plat=linux` +
+    `&api=${encodeURIComponent(apiBaseUrl.replace(/^https?:\/\//, ''))}`;
 
-  const text = await response.text();
+  return `#!/usr/bin/env bash
+set -e
 
-  if (!response.ok) {
-    throw new Error(
-      `Falha ao gerar script Linux: HTTP ${response.status} - ${text.slice(
-        0,
-        300,
-      )}`,
-    );
-  }
+if [ "$EUID" -ne 0 ]; then
+  echo "ERROR: Must be run as root"
+  exit 1
+fi
 
-  if (!text.trim().startsWith('#!')) {
-    throw new Error(
-      `A API de instalação retornou uma resposta inesperada: ${text.slice(
-        0,
-        300,
-      )}`,
-    );
-  }
+HAS_SYSTEMD=$(ps --no-headers -o comm 1 || true)
+if [ "$HAS_SYSTEMD" != "systemd" ]; then
+  echo "ERROR: This install script only supports systemd"
+  exit 1
+fi
 
-  return text;
+cd /tmp
+
+echo "Downloading SafeOps agent..."
+curl -L -o '${shellEscape(binaryName)}' '${shellEscape(downloadUrl)}'
+
+chmod +x '${shellEscape(binaryName)}'
+
+echo "Installing SafeOps agent..."
+./'${shellEscape(binaryName)}' -m install \\
+  --api '${shellEscape(apiBaseUrl)}' \\
+  --client-id ${installer.trmm_client_id} \\
+  --site-id ${installer.trmm_site_id} \\
+  --agent-type '${shellEscape(agentType)}' \\
+  --auth '${shellEscape(authToken)}'
+
+echo "SafeOps agent installation completed."
+`;
 }
 
 export async function GET(
@@ -307,7 +311,7 @@ export async function GET(
     }
 
     if (installMethod === 'linux_script') {
-      const script = await generateLinuxInstaller(installer);
+      const script = buildLinuxScript(installer);
       const filename =
         installer.download_filename ??
         `safeops-${installer.agent_type}-${installer.architecture}.sh`;
