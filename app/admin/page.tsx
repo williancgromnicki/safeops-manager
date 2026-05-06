@@ -160,8 +160,7 @@ export default async function AdminPage() {
       <div className="rounded-2xl border border-surface-border bg-white p-5 shadow-sm">
         <h3 className="section-title">Clientes cadastrados</h3>
         <p className="mt-2 text-sm text-slate-600">
-          Lista de clientes conhecidos no SafeOps Manager e links de instalação
-          cadastrados para POC.
+          Lista de clientes conhecidos no SafeOps Manager e links de instalação disponíveis para implantação de agentes.
         </p>
 
         <div className="mt-5">
