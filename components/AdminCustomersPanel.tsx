@@ -895,14 +895,6 @@ export function AdminCustomersPanel() {
         </div>
       ) : null}
 
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm leading-relaxed text-amber-900">
-        <p className="font-semibold">Próximo passo da integração</p>
-        <p className="mt-2">
-          Esta tela já prepara clientes, sites e URLs de instaladores. A próxima
-          etapa é automatizar a criação no ambiente operacional e preencher os
-          IDs externos automaticamente.
-        </p>
-      </div>
     </div>
   );
 }

@@ -22,6 +22,32 @@ type CreateCustomerPayload = {
   defaultSiteName?: string;
 };
 
+type CustomerRow = {
+  id: string;
+  name: string;
+  slug: string;
+  tactical_client_id: string | null;
+  trmm_windows_agent_url: string | null;
+  trmm_linux_agent_url: string | null;
+  trmm_macos_agent_url: string | null;
+  notes: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+type SiteRow = {
+  id: string;
+  customer_id: string;
+  name: string;
+  slug: string;
+  tactical_site_id: string | null;
+  notes: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
 function cleanString(value?: string | null): string | null {
   const cleaned = value?.trim();
 
@@ -116,7 +142,7 @@ export async function GET() {
 
     const supabaseAdmin = getSupabaseAdmin();
 
-    const { data, error } = await supabaseAdmin
+    const { data: customersData, error: customersError } = await supabaseAdmin
       .from('customers')
       .select(
         [
@@ -131,18 +157,59 @@ export async function GET() {
           'is_active',
           'created_at',
           'updated_at',
-          'sites(id, customer_id, name, slug, tactical_site_id, notes, is_active, created_at, updated_at)',
         ].join(', '),
       )
       .order('name', { ascending: true });
 
-    if (error) {
-      throw new Error(`Erro ao listar clientes: ${error.message}`);
+    if (customersError) {
+      throw new Error(`Erro ao listar clientes: ${customersError.message}`);
+    }
+
+    const customers = (customersData ?? []) as unknown as CustomerRow[];
+    const customerIds = customers.map((customer) => customer.id);
+
+    let sites: SiteRow[] = [];
+
+    if (customerIds.length > 0) {
+      const { data: sitesData, error: sitesError } = await supabaseAdmin
+        .from('sites')
+        .select(
+          [
+            'id',
+            'customer_id',
+            'name',
+            'slug',
+            'tactical_site_id',
+            'notes',
+            'is_active',
+            'created_at',
+            'updated_at',
+          ].join(', '),
+        )
+        .in('customer_id', customerIds)
+        .order('name', { ascending: true });
+
+      if (sitesError) {
+        throw new Error(`Erro ao listar sites: ${sitesError.message}`);
+      }
+
+      sites = (sitesData ?? []) as unknown as SiteRow[];
+    }
+
+    const sitesByCustomerId = new Map<string, SiteRow[]>();
+
+    for (const site of sites) {
+      const current = sitesByCustomerId.get(site.customer_id) ?? [];
+      current.push(site);
+      sitesByCustomerId.set(site.customer_id, current);
     }
 
     return NextResponse.json({
       ok: true,
-      customers: data ?? [],
+      customers: customers.map((customer) => ({
+        ...customer,
+        sites: sitesByCustomerId.get(customer.id) ?? [],
+      })),
     });
   } catch (error) {
     const message =
@@ -257,8 +324,7 @@ export async function POST(request: NextRequest) {
     }
 
     const createDefaultSite = payload.createDefaultSite !== false;
-    const defaultSiteName =
-      cleanString(payload.defaultSiteName) ?? 'Matriz';
+    const defaultSiteName = cleanString(payload.defaultSiteName) ?? 'Matriz';
 
     if (createDefaultSite) {
       const siteSlug = slugify(defaultSiteName);
