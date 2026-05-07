@@ -72,6 +72,110 @@ function readString(
   return fallback;
 }
 
+function normalizeUnknownValue(value: unknown): string | null {
+  if (typeof value === 'string' && value.trim()) {
+    return value.trim();
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  if (typeof value === 'boolean') {
+    return value ? 'true' : 'false';
+  }
+
+  return null;
+}
+
+function findNestedValue(
+  value: unknown,
+  keyNames: string[],
+  depth = 0,
+): string | null {
+  if (depth > 4 || value === null || value === undefined) {
+    return null;
+  }
+
+  const directValue = normalizeUnknownValue(value);
+
+  if (directValue) {
+    return directValue;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findNestedValue(item, keyNames, depth + 1);
+
+      if (found) {
+        return found;
+      }
+    }
+
+    return null;
+  }
+
+  if (typeof value !== 'object') {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const normalizedKeys = keyNames.map((key) => key.toLowerCase());
+
+  for (const [key, itemValue] of Object.entries(record)) {
+    if (normalizedKeys.includes(key.toLowerCase())) {
+      const found = findNestedValue(itemValue, keyNames, depth + 1);
+
+      if (found) {
+        return found;
+      }
+    }
+  }
+
+  for (const itemValue of Object.values(record)) {
+    const found = findNestedValue(itemValue, keyNames, depth + 1);
+
+    if (found) {
+      return found;
+    }
+  }
+
+  return null;
+}
+
+function readEventId(item: RawEventItem): string {
+  const direct = findNestedValue(item, [
+    'event_id',
+    'eventid',
+    'eventId',
+    'EventID',
+    'EventId',
+    'id',
+    'Id',
+    'event_identifier',
+    'EventIdentifier',
+    'event_code',
+    'EventCode',
+    'eventCode',
+  ]);
+
+  if (direct) {
+    return direct;
+  }
+
+  const xml = readString(item, ['xml', 'Xml', 'event_xml', 'EventXml'], '');
+
+  if (xml) {
+    const match = xml.match(/<EventID[^>]*>([^<]+)<\/EventID>/i);
+
+    if (match?.[1]?.trim()) {
+      return match[1].trim();
+    }
+  }
+
+  return '—';
+}
+
 function readEventArray(data: unknown): RawEventItem[] {
   if (Array.isArray(data)) {
     return data.filter((item): item is RawEventItem => {
@@ -384,11 +488,7 @@ export async function GET(request: NextRequest, context: EventLogRouteContext) {
         customerId: activeCustomer.customerId,
       },
       events: events.map((event, index) => {
-        const eventId = readString(
-          event,
-          ['event_id', 'eventid', 'EventID', 'id', 'Id'],
-          '—',
-        );
+        const eventId = readEventId(event);
         const level = normalizeLevel(
           readString(
             event,
