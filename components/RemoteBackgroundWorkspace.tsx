@@ -514,9 +514,13 @@ function ServiceActionConfirmModal({
 
 function ProcessDetailsModal({
   process,
+  isKilling,
+  onKillProcess,
   onClose,
 }: {
   process: ProcessItem;
+  isKilling: boolean;
+  onKillProcess: (process: ProcessItem) => Promise<void>;
   onClose: () => void;
 }) {
   return (
@@ -607,13 +611,26 @@ function ProcessDetailsModal({
           </div>
         </div>
 
-        <div className="border-t border-slate-100 bg-slate-50 px-5 py-4 text-right">
+        <div className="flex flex-col-reverse gap-2 border-t border-slate-100 bg-slate-50 px-5 py-4 sm:flex-row sm:justify-end">
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            disabled={isKilling}
+            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Fechar
+          </button>
+
+          <button
+            type="button"
+            onClick={async () => {
+              await onKillProcess(process);
+              onClose();
+            }}
+            disabled={isKilling}
+            className="inline-flex items-center justify-center rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-800 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isKilling ? 'Finalizando...' : 'Finalizar processo'}
           </button>
         </div>
       </div>
@@ -1040,6 +1057,7 @@ function ProcessesPanel({
   actionMessageType,
   activeProcessAction,
   autoRefreshSeconds,
+  lastUpdatedAt,
   onAutoRefreshChange,
   onRefresh,
   onKillProcess,
@@ -1051,6 +1069,7 @@ function ProcessesPanel({
   actionMessageType: 'success' | 'warning' | 'error' | null;
   activeProcessAction: number | null;
   autoRefreshSeconds: number;
+  lastUpdatedAt: string | null;
   onAutoRefreshChange: (seconds: number) => void;
   onRefresh: () => void;
   onKillProcess: (process: ProcessItem) => Promise<void>;
@@ -1095,6 +1114,7 @@ function ProcessesPanel({
 
           <p className="mt-1 text-xs text-slate-600">
             {processes.length} processos encontrados
+            {lastUpdatedAt ? ` • atualizado em ${lastUpdatedAt}` : ''}
           </p>
         </div>
 
@@ -1266,6 +1286,8 @@ function ProcessesPanel({
       {selectedProcess ? (
         <ProcessDetailsModal
           process={selectedProcess}
+          isKilling={activeProcessAction === selectedProcess.pid}
+          onKillProcess={onKillProcess}
           onClose={() => setSelectedProcess(null)}
         />
       ) : null}
@@ -1322,6 +1344,9 @@ export function RemoteBackgroundWorkspace({
   >(null);
   const [processAutoRefreshSeconds, setProcessAutoRefreshSeconds] =
     useState(0);
+  const [processesLastUpdatedAt, setProcessesLastUpdatedAt] = useState<
+    string | null
+  >(null);
 
   const activeTabDescription = useMemo(
     () => tabs.find((tab) => tab.key === activeTab)?.description ?? '',
@@ -1428,6 +1453,13 @@ export function RemoteBackgroundWorkspace({
       }
 
       setProcesses(Array.isArray(data.processes) ? data.processes : []);
+      setProcessesLastUpdatedAt(
+        new Intl.DateTimeFormat('pt-BR', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        }).format(new Date()),
+      );
       setHasLoadedProcesses(true);
     } catch (error) {
       setProcessesMessage(
@@ -1734,6 +1766,7 @@ export function RemoteBackgroundWorkspace({
               actionMessageType={processActionMessageType}
               activeProcessAction={activeProcessAction}
               autoRefreshSeconds={processAutoRefreshSeconds}
+              lastUpdatedAt={processesLastUpdatedAt}
               onAutoRefreshChange={setProcessAutoRefreshSeconds}
               onRefresh={loadProcesses}
               onKillProcess={killProcess}
