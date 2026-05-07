@@ -1912,6 +1912,19 @@ export function RemoteBackgroundWorkspace({
     string | null
   >(null);
 
+  const [eventLogEvents, setEventLogEvents] = useState<EventLogItem[]>([]);
+  const [isLoadingEventLog, setIsLoadingEventLog] = useState(false);
+  const [eventLogMessage, setEventLogMessage] = useState<string | null>(null);
+  const [hasLoadedEventLog, setHasLoadedEventLog] = useState(false);
+  const [selectedEventLog, setSelectedEventLog] =
+    useState<EventLogName>('Application');
+  const [eventSeverityFilter, setEventSeverityFilter] =
+    useState<EventSeverityFilter>('all');
+  const [eventLogAutoRefreshSeconds, setEventLogAutoRefreshSeconds] =
+    useState(0);
+  const [eventLogLastUpdatedAt, setEventLogLastUpdatedAt] =
+    useState<Date | null>(null);
+
   const isLinuxDevice = isLinuxOperatingSystem(operatingSystem);
 
   const visibleTabs = useMemo(
@@ -2294,7 +2307,7 @@ export function RemoteBackgroundWorkspace({
     if (activeTab === 'eventlog') {
       void loadEventLog();
     }
-  }, [selectedEventLog]);
+  }, [activeTab, loadEventLog]);
 
   useEffect(() => {
     if (activeTab !== 'eventlog') return;
