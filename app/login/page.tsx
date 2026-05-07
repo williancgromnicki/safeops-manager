@@ -63,17 +63,16 @@ export default function LoginPage() {
             required
           />
         </div>
-        <div className="flex gap-2">
-          <button formAction={login} className="w-full rounded-lg bg-brand-700 px-4 py-2 font-semibold text-white hover:bg-brand-900">
-            Entrar
-          </button>
-          <button
-            formAction={recoverAccess}
-            className="w-full rounded-lg border border-surface-border px-4 py-2 font-semibold text-slate-700 hover:bg-slate-100"
-          >
-            Recuperar acesso
-          </button>
         </div>
+
+<div className="mt-4">
+  <button
+    formAction={login}
+    className="w-full rounded-lg bg-brand-700 px-4 py-2 font-semibold text-white hover:bg-brand-900"
+  >
+    Entrar
+  </button>
+</div>
       </form>
     </section>
   );
