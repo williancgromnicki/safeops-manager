@@ -35,7 +35,7 @@ export default async function RemoteBackgroundPage({
   if (!activeCustomer) {
     return (
       <section className="space-y-6">
-        <h2 className="section-title">Remote Background</h2>
+        <h2 className="section-title">Operação remota</h2>
 
         <EmptyState
           title="Nenhum cliente vinculado"
@@ -83,7 +83,7 @@ export default async function RemoteBackgroundPage({
           </Link>
 
           <h1 className="mt-3 text-2xl font-semibold text-slate-950">
-            Remote Background
+            Operação remota
           </h1>
 
           <p className="mt-2 text-sm text-slate-600">
@@ -96,6 +96,7 @@ export default async function RemoteBackgroundPage({
         deviceId={deviceId}
         customerId={activeCustomer.customerId}
         deviceName={device.name}
+        operatingSystem={device.operatingSystem}
       />
     </section>
   );
