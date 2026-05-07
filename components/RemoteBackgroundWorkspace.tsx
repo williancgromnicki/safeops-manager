@@ -44,6 +44,21 @@ type EventLogResponse = {
   total?: number;
 };
 
+type RegistryResponse = {
+  ok: boolean;
+  error?: string;
+  path?: string;
+  keys?: RegistryKeyItem[];
+  values?: RegistryValueItem[];
+};
+
+type RegistryActionResponse = {
+  ok: boolean;
+  error?: string;
+  message?: string;
+  status?: 'success' | 'warning' | 'failed';
+};
+
 type ServiceActionResponse = {
   ok: boolean;
   status?: 'success' | 'warning' | 'failed';
@@ -98,6 +113,39 @@ type EventLogItem = {
   logName: string;
   provider: string;
   raw?: unknown;
+};
+
+type RegistryKeyItem = {
+  name: string;
+  path: string;
+  hasSubkeys: boolean;
+};
+
+type RegistryValueItem = {
+  name: string;
+  type: string;
+  data: string;
+  path: string;
+};
+
+type RegistryAction =
+  | 'create_key'
+  | 'delete_key'
+  | 'rename_key'
+  | 'create_value'
+  | 'modify_value'
+  | 'delete_value'
+  | 'rename_value';
+
+type RegistryActionPayload = {
+  action: RegistryAction;
+  path: string;
+  name?: string;
+  type?: string;
+  data?: string;
+  newPath?: string;
+  oldName?: string;
+  newName?: string;
 };
 
 type EventLogName = 'Application' | 'System' | 'Security';
@@ -391,6 +439,79 @@ function matchesEventSeverity(level: string, filter: EventSeverityFilter) {
 
 
 
+const registryValueTypes = [
+  'REG_SZ',
+  'REG_DWORD',
+  'REG_QWORD',
+  'REG_MULTI_SZ',
+  'REG_EXPAND_SZ',
+  'REG_BINARY',
+];
+
+function normalizeRegistryPath(path: string) {
+  const cleaned = path.trim().replace(/\/+/, '\\').replace(/\\+/g, '\\');
+
+  return cleaned || 'Computer';
+}
+
+function getRegistryParentPath(path: string) {
+  const normalized = normalizeRegistryPath(path).replace(/\\$/, '');
+
+  if (normalized === 'Computer') {
+    return 'Computer';
+  }
+
+  const parts = normalized.split('\\').filter(Boolean);
+
+  if (parts.length <= 1) {
+    return 'Computer';
+  }
+
+  return `${parts.slice(0, -1).join('\\')}\\`;
+}
+
+function buildRegistryChildPath(parentPath: string, childName: string) {
+  const parent = normalizeRegistryPath(parentPath);
+  const child = childName.trim().replace(/^\\+|\\+$/g, '');
+
+  if (!child) return parent;
+
+  if (child.includes('\\')) {
+    return `${child.replace(/\\+$/g, '')}\\`;
+  }
+
+  if (parent === 'Computer') {
+    return `${child}\\`;
+  }
+
+  return `${parent.replace(/\\+$/g, '')}\\${child}\\`;
+}
+
+function getRegistryBreadcrumbs(path: string) {
+  const normalized = normalizeRegistryPath(path).replace(/\\+$/g, '');
+
+  if (normalized === 'Computer') {
+    return [{ label: 'Computer', path: 'Computer' }];
+  }
+
+  const parts = normalized.split('\\').filter(Boolean);
+
+  return [
+    { label: 'Computer', path: 'Computer' },
+    ...parts.map((part, index) => ({
+      label: part,
+      path: `${parts.slice(0, index + 1).join('\\')}\\`,
+    })),
+  ];
+}
+
+function truncateRegistryData(value: string) {
+  if (value.length <= 220) return value;
+
+  return `${value.slice(0, 220)}...`;
+}
+
+
 function FileBrowserPanel({
   fileUrl,
   isLoading,
@@ -449,86 +570,6 @@ function FileBrowserPanel({
           <iframe
             title={`Navegador de arquivos - ${deviceName}`}
             src={fileUrl}
-            className="h-[720px] w-full bg-white"
-            allow="clipboard-read; clipboard-write; fullscreen"
-          />
-        ) : (
-          <div className="flex min-h-[720px] items-center justify-center p-8 text-center">
-            <div>
-              <p className="text-sm font-semibold text-white">
-                Sessão não iniciada
-              </p>
-              <p className="mt-2 text-xs text-slate-300">
-                Clique em “Renovar sessão” para tentar novamente.
-              </p>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-
-
-function RegistryPanel({
-  registryUrl,
-  isLoading,
-  message,
-  deviceName,
-  onRefresh,
-}: {
-  registryUrl: string | null;
-  isLoading: boolean;
-  message: string | null;
-  deviceName: string;
-  onRefresh: () => void;
-}) {
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h3 className="text-sm font-semibold text-slate-900">
-            Registro do dispositivo
-          </h3>
-
-          <p className="mt-1 text-xs text-slate-600">
-            Navegue e gerencie chaves e valores do Registro em uma sessão controlada.
-          </p>
-        </div>
-
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={isLoading}
-          className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isLoading ? 'Renovando...' : 'Renovar sessão'}
-        </button>
-      </div>
-
-      {message ? (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-          {message}
-        </div>
-      ) : null}
-
-      <div className="overflow-hidden rounded-2xl border border-slate-300 bg-slate-950">
-        {isLoading ? (
-          <div className="flex min-h-[720px] items-center justify-center p-8 text-center">
-            <div>
-              <p className="text-sm font-semibold text-white">
-                Abrindo Registro...
-              </p>
-              <p className="mt-2 text-xs text-slate-300">
-                Aguarde enquanto a sessão segura é preparada.
-              </p>
-            </div>
-          </div>
-        ) : registryUrl ? (
-          <iframe
-            title={`Registro do dispositivo - ${deviceName}`}
-            src={registryUrl}
             className="h-[720px] w-full bg-white"
             allow="clipboard-read; clipboard-write; fullscreen"
           />
@@ -1425,6 +1466,664 @@ function ServicesPanel({
   );
 }
 
+function RegistryValueModal({
+  title,
+  currentValue,
+  path,
+  onClose,
+  onSubmit,
+}: {
+  title: string;
+  currentValue?: RegistryValueItem | null;
+  path: string;
+  onClose: () => void;
+  onSubmit: (input: { name: string; type: string; data: string }) => void;
+}) {
+  const [name, setName] = useState(currentValue?.name ?? 'New Value');
+  const [type, setType] = useState(currentValue?.type ?? 'REG_SZ');
+  const [data, setData] = useState(currentValue?.data ?? '');
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4 py-6">
+      <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        <div className="border-b border-slate-100 px-5 py-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">
+                Registro do dispositivo
+              </p>
+
+              <h3 className="mt-1 text-lg font-semibold text-slate-950">
+                {title}
+              </h3>
+
+              <p className="mt-1 break-all font-mono text-xs text-slate-500">
+                {path}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg px-2 py-1 text-sm font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+              aria-label="Fechar"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-4 px-5 py-5">
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Nome
+            </label>
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Tipo
+            </label>
+            <select
+              value={type}
+              onChange={(event) => setType(event.target.value)}
+              className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+            >
+              {registryValueTypes.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Dados
+            </label>
+            <textarea
+              value={data}
+              onChange={(event) => setData(event.target.value)}
+              rows={8}
+              className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-800 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-col-reverse gap-2 border-t border-slate-100 bg-slate-50 px-5 py-4 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+          >
+            Cancelar
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onSubmit({ name, type, data })}
+            className="inline-flex items-center justify-center rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-800"
+          >
+            Salvar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RegistryTextModal({
+  title,
+  label,
+  initialValue,
+  onClose,
+  onSubmit,
+}: {
+  title: string;
+  label: string;
+  initialValue: string;
+  onClose: () => void;
+  onSubmit: (value: string) => void;
+}) {
+  const [value, setValue] = useState(initialValue);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4 py-6">
+      <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        <div className="border-b border-slate-100 px-5 py-4">
+          <h3 className="text-lg font-semibold text-slate-950">{title}</h3>
+        </div>
+
+        <div className="px-5 py-5">
+          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            {label}
+          </label>
+          <input
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+          />
+        </div>
+
+        <div className="flex flex-col-reverse gap-2 border-t border-slate-100 bg-slate-50 px-5 py-4 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+          >
+            Cancelar
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onSubmit(value)}
+            className="inline-flex items-center justify-center rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-800"
+          >
+            Confirmar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RegistryPanel({
+  currentPath,
+  keys,
+  values,
+  isLoading,
+  message,
+  actionMessage,
+  actionMessageType,
+  lastUpdatedAt,
+  onNavigate,
+  onRefresh,
+  onAction,
+}: {
+  currentPath: string;
+  keys: RegistryKeyItem[];
+  values: RegistryValueItem[];
+  isLoading: boolean;
+  message: string | null;
+  actionMessage: string | null;
+  actionMessageType: 'success' | 'warning' | 'error' | null;
+  lastUpdatedAt: Date | null;
+  onNavigate: (path: string) => void;
+  onRefresh: () => void;
+  onAction: (payload: RegistryActionPayload) => Promise<void>;
+}) {
+  const [pathInput, setPathInput] = useState(currentPath);
+  const [search, setSearch] = useState('');
+  const [createKeyOpen, setCreateKeyOpen] = useState(false);
+  const [renameKey, setRenameKey] = useState<RegistryKeyItem | null>(null);
+  const [createValueOpen, setCreateValueOpen] = useState(false);
+  const [editValue, setEditValue] = useState<RegistryValueItem | null>(null);
+  const [renameValue, setRenameValue] = useState<RegistryValueItem | null>(null);
+
+  useEffect(() => {
+    setPathInput(currentPath);
+  }, [currentPath]);
+
+  const normalizedSearch = search.trim().toLowerCase();
+
+  const filteredKeys = useMemo(() => {
+    if (!normalizedSearch) return keys;
+
+    return keys.filter((item) => {
+      return (
+        item.name.toLowerCase().includes(normalizedSearch) ||
+        item.path.toLowerCase().includes(normalizedSearch)
+      );
+    });
+  }, [keys, normalizedSearch]);
+
+  const filteredValues = useMemo(() => {
+    if (!normalizedSearch) return values;
+
+    return values.filter((item) => {
+      return (
+        item.name.toLowerCase().includes(normalizedSearch) ||
+        item.type.toLowerCase().includes(normalizedSearch) ||
+        item.data.toLowerCase().includes(normalizedSearch)
+      );
+    });
+  }, [values, normalizedSearch]);
+
+  const breadcrumbs = getRegistryBreadcrumbs(currentPath);
+
+  function handleSubmitPath(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    onNavigate(normalizeRegistryPath(pathInput));
+  }
+
+  async function handleDeleteKey(item: RegistryKeyItem) {
+    if (!window.confirm(`Excluir a chave ${item.path}?`)) return;
+
+    await onAction({ action: 'delete_key', path: item.path });
+  }
+
+  async function handleDeleteValue(item: RegistryValueItem) {
+    if (!window.confirm(`Excluir o valor ${item.name || '(Padrão)'}?`)) return;
+
+    await onAction({ action: 'delete_value', path: item.path, name: item.name });
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 xl:flex-row xl:items-center xl:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">
+            Registro do dispositivo
+          </h3>
+
+          <p className="mt-1 text-xs text-slate-600">
+            {keys.length} chaves • {values.length} valores
+            {lastUpdatedAt
+              ? ` • Última atualização: ${lastUpdatedAt.toLocaleTimeString()}`
+              : null}
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Buscar chave, nome, tipo ou valor..."
+            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 lg:w-80"
+          />
+
+          <button
+            type="button"
+            onClick={() => setCreateKeyOpen(true)}
+            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+          >
+            Nova chave
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setCreateValueOpen(true)}
+            disabled={currentPath === 'Computer'}
+            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Novo valor
+          </button>
+
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={isLoading}
+            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isLoading ? 'Atualizando...' : 'Atualizar'}
+          </button>
+        </div>
+      </div>
+
+      <form
+        onSubmit={handleSubmitPath}
+        className="rounded-2xl border border-slate-200 bg-white p-4"
+      >
+        <label
+          htmlFor="registry-path"
+          className="text-xs font-semibold uppercase tracking-wide text-slate-500"
+        >
+          Caminho atual
+        </label>
+
+        <div className="mt-2 flex flex-col gap-2 lg:flex-row lg:items-center">
+          <input
+            id="registry-path"
+            value={pathInput}
+            onChange={(event) => setPathInput(event.target.value)}
+            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-800 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+          />
+
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="inline-flex items-center justify-center rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Abrir
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigate(getRegistryParentPath(currentPath))}
+            disabled={isLoading || normalizeRegistryPath(currentPath) === 'Computer'}
+            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Voltar
+          </button>
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-2 text-xs">
+          {breadcrumbs.map((item, index) => (
+            <button
+              key={`${item.path}-${index}`}
+              type="button"
+              onClick={() => onNavigate(item.path)}
+              className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-medium text-slate-600 transition hover:bg-brand-50 hover:text-brand-700"
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </form>
+
+      {message ? (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          {message}
+        </div>
+      ) : null}
+
+      {actionMessage ? (
+        <div
+          className={[
+            'rounded-xl border px-4 py-3 text-sm',
+            actionMessageType === 'success'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+              : null,
+            actionMessageType === 'warning'
+              ? 'border-amber-200 bg-amber-50 text-amber-800'
+              : null,
+            actionMessageType === 'error'
+              ? 'border-rose-200 bg-rose-50 text-rose-800'
+              : null,
+          ]
+            .filter(Boolean)
+            .join(' ')}
+        >
+          {actionMessage}
+        </div>
+      ) : null}
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
+            <h4 className="text-sm font-semibold text-slate-900">Chaves</h4>
+          </div>
+
+          <div className="max-h-[620px] overflow-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="sticky top-0 z-10 bg-slate-50">
+                <tr>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                    Nome
+                  </th>
+                  <th className="px-4 py-3 text-right font-semibold text-slate-700">
+                    Ações
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {isLoading && keys.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={2}
+                      className="px-4 py-8 text-center text-slate-500"
+                    >
+                      Carregando chaves...
+                    </td>
+                  </tr>
+                ) : null}
+
+                {!isLoading && filteredKeys.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={2}
+                      className="px-4 py-8 text-center text-slate-500"
+                    >
+                      Nenhuma chave encontrada.
+                    </td>
+                  </tr>
+                ) : null}
+
+                {filteredKeys.map((item) => (
+                  <tr key={item.path} className="align-top">
+                    <td className="px-4 py-3">
+                      <p className="font-semibold text-slate-900">{item.name}</p>
+                      <p className="mt-1 break-all font-mono text-xs text-slate-500">
+                        {item.path}
+                      </p>
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => onNavigate(item.path)}
+                          className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                        >
+                          Abrir
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setRenameKey(item)}
+                          disabled={currentPath === 'Computer'}
+                          className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Renomear
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteKey(item)}
+                          disabled={currentPath === 'Computer'}
+                          className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-semibold text-rose-700 shadow-sm transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Excluir
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
+            <h4 className="text-sm font-semibold text-slate-900">Valores</h4>
+          </div>
+
+          <div className="max-h-[620px] overflow-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="sticky top-0 z-10 bg-slate-50">
+                <tr>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                    Nome
+                  </th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                    Tipo
+                  </th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                    Valor
+                  </th>
+                  <th className="px-4 py-3 text-right font-semibold text-slate-700">
+                    Ações
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {isLoading && values.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={4}
+                      className="px-4 py-8 text-center text-slate-500"
+                    >
+                      Carregando valores...
+                    </td>
+                  </tr>
+                ) : null}
+
+                {!isLoading && filteredValues.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={4}
+                      className="px-4 py-8 text-center text-slate-500"
+                    >
+                      Nenhum valor encontrado.
+                    </td>
+                  </tr>
+                ) : null}
+
+                {filteredValues.map((item) => (
+                  <tr key={`${item.path}-${item.name}`} className="align-top">
+                    <td className="max-w-xs px-4 py-3">
+                      <p className="break-all font-semibold text-slate-900">
+                        {item.name || '(Padrão)'}
+                      </p>
+                    </td>
+
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                      {item.type}
+                    </td>
+
+                    <td className="max-w-md px-4 py-3">
+                      <p className="break-all font-mono text-xs leading-relaxed text-slate-600">
+                        {truncateRegistryData(item.data)}
+                      </p>
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setEditValue(item)}
+                          className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                        >
+                          Editar
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setRenameValue(item)}
+                          className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                        >
+                          Renomear
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteValue(item)}
+                          className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-semibold text-rose-700 shadow-sm transition hover:bg-rose-100"
+                        >
+                          Excluir
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {createKeyOpen ? (
+        <RegistryTextModal
+          title="Criar nova chave"
+          label="Nome da chave"
+          initialValue="New_Key"
+          onClose={() => setCreateKeyOpen(false)}
+          onSubmit={(value) => {
+            setCreateKeyOpen(false);
+            void onAction({
+              action: 'create_key',
+              path: buildRegistryChildPath(currentPath, value),
+            });
+          }}
+        />
+      ) : null}
+
+      {renameKey ? (
+        <RegistryTextModal
+          title="Renomear chave"
+          label="Novo nome"
+          initialValue={renameKey.name}
+          onClose={() => setRenameKey(null)}
+          onSubmit={(value) => {
+            const parentPath = getRegistryParentPath(renameKey.path);
+            setRenameKey(null);
+            void onAction({
+              action: 'rename_key',
+              path: renameKey.path,
+              newPath: buildRegistryChildPath(parentPath, value),
+            });
+          }}
+        />
+      ) : null}
+
+      {createValueOpen ? (
+        <RegistryValueModal
+          title="Criar novo valor"
+          path={currentPath}
+          onClose={() => setCreateValueOpen(false)}
+          onSubmit={(input) => {
+            setCreateValueOpen(false);
+            void onAction({
+              action: 'create_value',
+              path: currentPath,
+              name: input.name,
+              type: input.type,
+              data: input.data,
+            });
+          }}
+        />
+      ) : null}
+
+      {editValue ? (
+        <RegistryValueModal
+          title="Editar valor"
+          currentValue={editValue}
+          path={currentPath}
+          onClose={() => setEditValue(null)}
+          onSubmit={(input) => {
+            setEditValue(null);
+            void onAction({
+              action: 'modify_value',
+              path: currentPath,
+              name: editValue.name,
+              type: input.type,
+              data: input.data,
+            });
+          }}
+        />
+      ) : null}
+
+      {renameValue ? (
+        <RegistryTextModal
+          title="Renomear valor"
+          label="Novo nome"
+          initialValue={renameValue.name}
+          onClose={() => setRenameValue(null)}
+          onSubmit={(value) => {
+            setRenameValue(null);
+            void onAction({
+              action: 'rename_value',
+              path: currentPath,
+              oldName: renameValue.name,
+              newName: value,
+            });
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+
 function EventLogPanel({
   events,
   isLoading,
@@ -1930,11 +2629,6 @@ export function RemoteBackgroundWorkspace({
   );
   const [hasLoadedFileBrowser, setHasLoadedFileBrowser] = useState(false);
 
-  const [registryUrl, setRegistryUrl] = useState<string | null>(null);
-  const [isLoadingRegistry, setIsLoadingRegistry] = useState(false);
-  const [registryMessage, setRegistryMessage] = useState<string | null>(null);
-  const [hasLoadedRegistry, setHasLoadedRegistry] = useState(false);
-
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [isLoadingServices, setIsLoadingServices] = useState(false);
   const [servicesMessage, setServicesMessage] = useState<string | null>(null);
@@ -1979,6 +2673,21 @@ export function RemoteBackgroundWorkspace({
   const [eventLogAutoRefreshSeconds, setEventLogAutoRefreshSeconds] =
     useState(0);
   const [eventLogLastUpdatedAt, setEventLogLastUpdatedAt] =
+    useState<Date | null>(null);
+
+  const [registryPath, setRegistryPath] = useState('Computer');
+  const [registryKeys, setRegistryKeys] = useState<RegistryKeyItem[]>([]);
+  const [registryValues, setRegistryValues] = useState<RegistryValueItem[]>([]);
+  const [isLoadingRegistry, setIsLoadingRegistry] = useState(false);
+  const [registryMessage, setRegistryMessage] = useState<string | null>(null);
+  const [registryActionMessage, setRegistryActionMessage] = useState<
+    string | null
+  >(null);
+  const [registryActionMessageType, setRegistryActionMessageType] = useState<
+    'success' | 'warning' | 'error' | null
+  >(null);
+  const [hasLoadedRegistry, setHasLoadedRegistry] = useState(false);
+  const [registryLastUpdatedAt, setRegistryLastUpdatedAt] =
     useState<Date | null>(null);
 
   const isLinuxDevice = isLinuxOperatingSystem(operatingSystem);
@@ -2064,44 +2773,6 @@ export function RemoteBackgroundWorkspace({
       );
     } finally {
       setIsLoadingFileBrowser(false);
-    }
-  }, [customerId, deviceId]);
-
-  const loadRegistrySession = useCallback(async () => {
-    try {
-      setIsLoadingRegistry(true);
-      setRegistryMessage(null);
-
-      const response = await fetch(
-        `/api/devices/${encodeURIComponent(
-          deviceId,
-        )}/remote-background/registry/session?customerId=${encodeURIComponent(
-          customerId,
-        )}`,
-        {
-          method: 'POST',
-          cache: 'no-store',
-        },
-      );
-
-      const data = (await response.json()) as RemoteBackgroundResponse;
-
-      if (!response.ok || !data.ok || !data.url) {
-        throw new Error(
-          data.error ?? 'Não foi possível abrir o Registro do dispositivo.',
-        );
-      }
-
-      setRegistryUrl(data.url);
-      setHasLoadedRegistry(true);
-    } catch (error) {
-      setRegistryMessage(
-        error instanceof Error
-          ? error.message
-          : 'Erro ao abrir Registro do dispositivo.',
-      );
-    } finally {
-      setIsLoadingRegistry(false);
     }
   }, [customerId, deviceId]);
 
@@ -2226,6 +2897,110 @@ export function RemoteBackgroundWorkspace({
       setIsLoadingEventLog(false);
     }
   }, [customerId, deviceId, selectedEventLog]);
+
+  const loadRegistry = useCallback(
+    async (pathOverride?: string) => {
+      const nextPath = normalizeRegistryPath(pathOverride ?? registryPath);
+
+      try {
+        setIsLoadingRegistry(true);
+        setRegistryMessage(null);
+
+        const response = await fetch(
+          `/api/devices/${encodeURIComponent(
+            deviceId,
+          )}/remote-background/registry?customerId=${encodeURIComponent(
+            customerId,
+          )}&path=${encodeURIComponent(nextPath)}&page=1&pageSize=400`,
+          {
+            method: 'GET',
+            cache: 'no-store',
+          },
+        );
+
+        const data = (await response.json()) as RegistryResponse;
+
+        if (!response.ok || !data.ok) {
+          throw new Error(
+            data.error ?? 'Não foi possível carregar o registro.',
+          );
+        }
+
+        setRegistryPath(data.path ?? nextPath);
+        setRegistryKeys(Array.isArray(data.keys) ? data.keys : []);
+        setRegistryValues(Array.isArray(data.values) ? data.values : []);
+        setHasLoadedRegistry(true);
+        setRegistryLastUpdatedAt(new Date());
+      } catch (error) {
+        setRegistryMessage(
+          error instanceof Error
+            ? error.message
+            : 'Erro ao carregar registro.',
+        );
+      } finally {
+        setIsLoadingRegistry(false);
+      }
+    },
+    [customerId, deviceId, registryPath],
+  );
+
+  const runRegistryAction = useCallback(
+    async (payload: RegistryActionPayload) => {
+      try {
+        setRegistryActionMessage(null);
+        setRegistryActionMessageType(null);
+
+        const response = await fetch(
+          `/api/devices/${encodeURIComponent(
+            deviceId,
+          )}/remote-background/registry/action?customerId=${encodeURIComponent(
+            customerId,
+          )}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            cache: 'no-store',
+            body: JSON.stringify(payload),
+          },
+        );
+
+        const data = (await response.json()) as RegistryActionResponse;
+
+        if (!response.ok || !data.ok) {
+          throw new Error(
+            data.error ?? data.message ?? 'Não foi possível executar a ação.',
+          );
+        }
+
+        setRegistryActionMessage(data.message ?? 'Operação executada.');
+        setRegistryActionMessageType(
+          data.status === 'warning' ? 'warning' : 'success',
+        );
+
+        if (payload.action === 'rename_key' || payload.action === 'create_key') {
+          await loadRegistry(payload.newPath ?? payload.path);
+          return;
+        }
+
+        if (payload.action === 'delete_key') {
+          await loadRegistry(getRegistryParentPath(payload.path));
+          return;
+        }
+
+        await loadRegistry(payload.path);
+      } catch (error) {
+        setRegistryActionMessage(
+          error instanceof Error
+            ? error.message
+            : 'Erro ao executar ação no registro.',
+        );
+        setRegistryActionMessageType('error');
+      }
+    },
+    [customerId, deviceId, loadRegistry],
+  );
 
   const runServiceAction = useCallback(
     async (
@@ -2367,12 +3142,6 @@ export function RemoteBackgroundWorkspace({
   }, [activeTab, hasLoadedFileBrowser, loadFileBrowserSession]);
 
   useEffect(() => {
-    if (activeTab === 'registry' && !hasLoadedRegistry) {
-      void loadRegistrySession();
-    }
-  }, [activeTab, hasLoadedRegistry, loadRegistrySession]);
-
-  useEffect(() => {
     if (activeTab === 'services' && !hasLoadedServices) {
       void loadServices();
     }
@@ -2421,6 +3190,12 @@ export function RemoteBackgroundWorkspace({
       window.clearInterval(intervalId);
     };
   }, [activeTab, eventLogAutoRefreshSeconds, loadEventLog]);
+
+  useEffect(() => {
+    if (activeTab === 'registry' && !hasLoadedRegistry) {
+      void loadRegistry();
+    }
+  }, [activeTab, hasLoadedRegistry, loadRegistry]);
 
 
 
@@ -2599,11 +3374,21 @@ export function RemoteBackgroundWorkspace({
 
           {activeTab === 'registry' ? (
             <RegistryPanel
-              registryUrl={registryUrl}
+              currentPath={registryPath}
+              keys={registryKeys}
+              values={registryValues}
               isLoading={isLoadingRegistry}
               message={registryMessage}
-              deviceName={deviceName}
-              onRefresh={loadRegistrySession}
+              actionMessage={registryActionMessage}
+              actionMessageType={registryActionMessageType}
+              lastUpdatedAt={registryLastUpdatedAt}
+              onNavigate={(nextPath) => {
+                void loadRegistry(nextPath);
+              }}
+              onRefresh={() => {
+                void loadRegistry();
+              }}
+              onAction={runRegistryAction}
             />
           ) : null}
         </div>
