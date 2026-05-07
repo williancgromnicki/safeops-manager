@@ -89,6 +89,30 @@ function readNumber(item: RawProcessItem, keys: string[], fallback = 0): number 
   return fallback;
 }
 
+function readMemoryMb(item: RawProcessItem): number {
+  const directMb = readNumber(
+    item,
+    ['mem_mb', 'memory_mb', 'memoryMb', 'rss_mb'],
+    Number.NaN,
+  );
+
+  if (Number.isFinite(directMb)) {
+    return directMb;
+  }
+
+  const bytes = readNumber(
+    item,
+    ['membytes', 'mem_bytes', 'memory_bytes', 'memory', 'Memory', 'rss'],
+    0,
+  );
+
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return 0;
+  }
+
+  return bytes / 1024 / 1024;
+}
+
 async function getAuthenticatedUser() {
   const supabase = await createClient();
 
@@ -323,14 +347,7 @@ export async function GET(request: NextRequest, context: ProcessesRouteContext) 
           'CPU',
           'percent_cpu',
         ]),
-        memoryMb: readNumber(process, [
-          'mem_mb',
-          'memory_mb',
-          'memory',
-          'Memory',
-          'rss',
-          'rss_mb',
-        ]),
+        memoryMb: readMemoryMb(process),
         path: readString(process, ['path', 'exe', 'ExecutablePath'], ''),
         commandLine: readString(
           process,
