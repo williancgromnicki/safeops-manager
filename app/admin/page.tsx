@@ -11,7 +11,6 @@ type AdminCustomer = {
   id: string;
   name: string;
   slug: string;
-  isActive: boolean;
   siteCount: number;
   createdAt: string;
 };
@@ -20,7 +19,6 @@ type CustomerRow = {
   id: string;
   name: string;
   slug: string | null;
-  is_active: boolean | null;
   created_at: string;
 };
 
@@ -84,7 +82,7 @@ async function listAdminCustomers(): Promise<AdminCustomer[]> {
 
   const { data: customersData, error: customersError } = await supabaseAdmin
     .from('customers')
-    .select(['id', 'name', 'slug', 'is_active', 'created_at'].join(', '))
+    .select('id, name, slug, created_at')
     .order('name', { ascending: true });
 
   if (customersError) {
@@ -94,7 +92,7 @@ async function listAdminCustomers(): Promise<AdminCustomer[]> {
   const customers = (customersData ?? []) as unknown as CustomerRow[];
   const customerIds = customers.map((customer) => customer.id);
 
-  let sites: SiteRow[] = [];
+  const siteCountByCustomerId = new Map<string, number>();
 
   if (customerIds.length > 0) {
     const { data: sitesData, error: sitesError } = await supabaseAdmin
@@ -102,25 +100,22 @@ async function listAdminCustomers(): Promise<AdminCustomer[]> {
       .select('id, customer_id')
       .in('customer_id', customerIds);
 
-    if (sitesError) {
-      throw new Error(`Erro ao listar sites: ${sitesError.message}`);
+    if (!sitesError) {
+      const sites = (sitesData ?? []) as unknown as SiteRow[];
+
+      for (const site of sites) {
+        const currentCount = siteCountByCustomerId.get(site.customer_id) ?? 0;
+        siteCountByCustomerId.set(site.customer_id, currentCount + 1);
+      }
+    } else {
+      console.warn('Não foi possível contar sites no painel administrativo:', sitesError.message);
     }
-
-    sites = (sitesData ?? []) as unknown as SiteRow[];
-  }
-
-  const siteCountByCustomerId = new Map<string, number>();
-
-  for (const site of sites) {
-    const currentCount = siteCountByCustomerId.get(site.customer_id) ?? 0;
-    siteCountByCustomerId.set(site.customer_id, currentCount + 1);
   }
 
   return customers.map((customer) => ({
     id: customer.id,
     name: customer.name,
     slug: customer.slug ?? '',
-    isActive: customer.is_active !== false,
     siteCount: siteCountByCustomerId.get(customer.id) ?? 0,
     createdAt: customer.created_at,
   }));
@@ -181,7 +176,7 @@ export default async function AdminPage() {
 
     customers = [];
     errorMessage =
-      'Não foi possível carregar o painel administrativo neste momento.';
+      'Não foi possível carregar a lista de clientes neste momento.';
   }
 
   return (
@@ -223,9 +218,7 @@ export default async function AdminPage() {
               description="Os clientes sincronizados ou cadastrados aparecerão aqui."
             />
           ) : (
-            <DataTable
-              columns={['Cliente', 'Slug', 'Sites', 'Status', 'Criado em']}
-            >
+            <DataTable columns={['Cliente', 'Slug', 'Sites', 'Criado em']}>
               {customers.map((customer) => (
                 <tr key={customer.id} className="text-slate-700">
                   <td className="px-4 py-3 font-medium text-slate-900">
@@ -233,17 +226,6 @@ export default async function AdminPage() {
                   </td>
                   <td className="px-4 py-3">{customer.slug || '—'}</td>
                   <td className="px-4 py-3">{customer.siteCount}</td>
-                  <td className="px-4 py-3">
-                    {customer.isActive ? (
-                      <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-600/20">
-                        Ativo
-                      </span>
-                    ) : (
-                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 ring-1 ring-slate-500/20">
-                        Inativo
-                      </span>
-                    )}
-                  </td>
                   <td className="px-4 py-3">{formatDate(customer.createdAt)}</td>
                 </tr>
               ))}

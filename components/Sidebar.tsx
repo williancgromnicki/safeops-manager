@@ -69,13 +69,13 @@ const ADMIN_NAV_ITEMS: NavItem[] = [
   {
     href: '/admin',
     label: 'Painel administrativo',
-    preserveCustomer: false,
+    preserveCustomer: true,
     roles: ['admin'],
   },
   {
     href: '/admin/customers',
     label: 'Clientes e sites',
-    preserveCustomer: false,
+    preserveCustomer: true,
     roles: ['admin'],
   },
   {
@@ -93,7 +93,7 @@ const ADMIN_NAV_ITEMS: NavItem[] = [
   {
     href: '/admin/alert-contacts',
     label: 'Contatos de alerta',
-    preserveCustomer: false,
+    preserveCustomer: true,
     disabled: true,
     roles: ['admin'],
   },
@@ -353,7 +353,7 @@ export function Sidebar() {
     }
 
     const nextPathname =
-      pathname === '/admin' || pathname === '/login' ? '/dashboard' : pathname;
+      pathname === '/login' ? '/dashboard' : pathname;
 
     router.push(`${nextPathname}?${params.toString()}`);
   };
