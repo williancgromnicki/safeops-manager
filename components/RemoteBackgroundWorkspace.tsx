@@ -35,6 +35,15 @@ type ProcessesResponse = {
   processes?: ProcessItem[];
 };
 
+type EventLogResponse = {
+  ok: boolean;
+  error?: string;
+  events?: EventLogItem[];
+  logName?: string;
+  page?: number;
+  total?: number;
+};
+
 type ServiceActionResponse = {
   ok: boolean;
   status?: 'success' | 'warning' | 'failed';
@@ -78,6 +87,22 @@ type ProcessItem = {
   status: string;
   raw?: unknown;
 };
+
+type EventLogItem = {
+  id: string;
+  timeGenerated: string;
+  source: string;
+  eventId: string;
+  level: string;
+  message: string;
+  logName: string;
+  provider: string;
+  raw?: unknown;
+};
+
+type EventLogName = 'Application' | 'System' | 'Security';
+
+type EventSeverityFilter = 'all' | 'error' | 'warning' | 'information';
 
 type RemoteTab =
   | 'terminal'
@@ -273,6 +298,96 @@ function getStartupLabel(value: StartupType) {
 
   return 'Desabilitado';
 }
+
+function getEventLevelLabel(level: string) {
+  const normalized = level.toLowerCase();
+
+  if (normalized.includes('error') || normalized.includes('erro')) {
+    return 'Erro';
+  }
+
+  if (
+    normalized.includes('warning') ||
+    normalized.includes('aviso') ||
+    normalized.includes('warn')
+  ) {
+    return 'Aviso';
+  }
+
+  if (
+    normalized.includes('information') ||
+    normalized.includes('informação') ||
+    normalized.includes('info')
+  ) {
+    return 'Informação';
+  }
+
+  if (normalized.includes('critical') || normalized.includes('crítico')) {
+    return 'Crítico';
+  }
+
+  return level || 'Não informado';
+}
+
+function getEventLevelClassName(level: string) {
+  const normalized = level.toLowerCase();
+
+  if (normalized.includes('critical') || normalized.includes('crítico')) {
+    return 'bg-rose-100 text-rose-800 ring-rose-700/20';
+  }
+
+  if (normalized.includes('error') || normalized.includes('erro')) {
+    return 'bg-rose-50 text-rose-700 ring-rose-600/20';
+  }
+
+  if (
+    normalized.includes('warning') ||
+    normalized.includes('aviso') ||
+    normalized.includes('warn')
+  ) {
+    return 'bg-amber-50 text-amber-700 ring-amber-600/20';
+  }
+
+  if (
+    normalized.includes('information') ||
+    normalized.includes('informação') ||
+    normalized.includes('info')
+  ) {
+    return 'bg-sky-50 text-sky-700 ring-sky-600/20';
+  }
+
+  return 'bg-slate-50 text-slate-700 ring-slate-600/20';
+}
+
+function matchesEventSeverity(level: string, filter: EventSeverityFilter) {
+  if (filter === 'all') return true;
+
+  const normalized = level.toLowerCase();
+
+  if (filter === 'error') {
+    return (
+      normalized.includes('critical') ||
+      normalized.includes('crítico') ||
+      normalized.includes('error') ||
+      normalized.includes('erro')
+    );
+  }
+
+  if (filter === 'warning') {
+    return (
+      normalized.includes('warning') ||
+      normalized.includes('aviso') ||
+      normalized.includes('warn')
+    );
+  }
+
+  return (
+    normalized.includes('information') ||
+    normalized.includes('informação') ||
+    normalized.includes('info')
+  );
+}
+
 
 function PlaceholderPanel({
   title,
@@ -613,6 +728,114 @@ function ServiceActionConfirmModal({
     </div>
   );
 }
+
+function EventDetailsModal({
+  event,
+  onClose,
+}: {
+  event: EventLogItem;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4 py-6">
+      <div className="w-full max-w-4xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        <div className="border-b border-slate-100 px-5 py-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">
+                Detalhes do evento
+              </p>
+
+              <h3 className="mt-1 text-lg font-semibold text-slate-950">
+                {event.source || event.provider || 'Evento do sistema'}
+              </h3>
+
+              <p className="mt-1 text-sm text-slate-500">
+                {event.logName} • ID {event.eventId}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg px-2 py-1 text-sm font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+              aria-label="Fechar detalhes do evento"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <div className="max-h-[72vh] space-y-5 overflow-auto px-5 py-5">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Severidade
+              </p>
+              <p className="mt-1 font-medium text-slate-900">
+                {getEventLevelLabel(event.level)}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Log
+              </p>
+              <p className="mt-1 font-medium text-slate-900">{event.logName}</p>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                ID do evento
+              </p>
+              <p className="mt-1 font-medium text-slate-900">
+                {event.eventId}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Data/Hora
+              </p>
+              <p className="mt-1 font-medium text-slate-900">
+                {event.timeGenerated}
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Fonte / Provedor
+            </p>
+            <p className="mt-2 rounded-xl border border-slate-200 bg-white p-4 text-sm leading-relaxed text-slate-700">
+              {event.source || event.provider || 'Não informado'}
+            </p>
+          </div>
+
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Mensagem
+            </p>
+            <pre className="mt-2 max-h-[360px] overflow-auto whitespace-pre-wrap rounded-xl border border-slate-200 bg-slate-950 p-4 text-xs leading-relaxed text-slate-100">
+              {event.message || 'Sem mensagem disponível.'}
+            </pre>
+          </div>
+        </div>
+
+        <div className="border-t border-slate-100 bg-slate-50 px-5 py-4 text-right">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+          >
+            Fechar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 function ProcessDetailsModal({
   process,
@@ -1151,6 +1374,237 @@ function ServicesPanel({
   );
 }
 
+function EventLogPanel({
+  events,
+  isLoading,
+  message,
+  selectedLog,
+  severityFilter,
+  autoRefreshSeconds,
+  lastUpdatedAt,
+  onSelectedLogChange,
+  onSeverityFilterChange,
+  onAutoRefreshChange,
+  onRefresh,
+}: {
+  events: EventLogItem[];
+  isLoading: boolean;
+  message: string | null;
+  selectedLog: EventLogName;
+  severityFilter: EventSeverityFilter;
+  autoRefreshSeconds: number;
+  lastUpdatedAt: Date | null;
+  onSelectedLogChange: (logName: EventLogName) => void;
+  onSeverityFilterChange: (severity: EventSeverityFilter) => void;
+  onAutoRefreshChange: (seconds: number) => void;
+  onRefresh: () => void;
+}) {
+  const [search, setSearch] = useState('');
+  const [selectedEvent, setSelectedEvent] = useState<EventLogItem | null>(null);
+
+  const filteredEvents = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+
+    return events.filter((event) => {
+      const matchesSeverity = matchesEventSeverity(event.level, severityFilter);
+
+      const matchesSearch =
+        !normalizedSearch ||
+        event.source.toLowerCase().includes(normalizedSearch) ||
+        event.provider.toLowerCase().includes(normalizedSearch) ||
+        event.eventId.toLowerCase().includes(normalizedSearch) ||
+        event.message.toLowerCase().includes(normalizedSearch);
+
+      return matchesSeverity && matchesSearch;
+    });
+  }, [events, search, severityFilter]);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 2xl:flex-row 2xl:items-center 2xl:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">
+            Eventos do dispositivo
+          </h3>
+
+          <p className="mt-1 text-xs text-slate-600">
+            {events.length} eventos carregados
+            {lastUpdatedAt
+              ? ` • Última atualização: ${lastUpdatedAt.toLocaleTimeString()}`
+              : null}
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-2 xl:flex-row xl:items-center">
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Buscar por fonte, ID ou mensagem..."
+            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 xl:w-80"
+          />
+
+          <select
+            value={selectedLog}
+            onChange={(event) =>
+              onSelectedLogChange(event.target.value as EventLogName)
+            }
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+          >
+            <option value="Application">Application</option>
+            <option value="System">System</option>
+            <option value="Security">Security</option>
+          </select>
+
+          <select
+            value={severityFilter}
+            onChange={(event) =>
+              onSeverityFilterChange(event.target.value as EventSeverityFilter)
+            }
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+          >
+            <option value="all">Todas severidades</option>
+            <option value="error">Erros/Críticos</option>
+            <option value="warning">Avisos</option>
+            <option value="information">Informações</option>
+          </select>
+
+          <select
+            value={autoRefreshSeconds}
+            onChange={(event) => onAutoRefreshChange(Number(event.target.value))}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+          >
+            {autoRefreshOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                Auto refresh: {option.label}
+              </option>
+            ))}
+          </select>
+
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={isLoading}
+            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isLoading ? 'Atualizando...' : 'Atualizar'}
+          </button>
+        </div>
+      </div>
+
+      {message ? (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          {message}
+        </div>
+      ) : null}
+
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        <div className="max-h-[620px] overflow-auto">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="sticky top-0 z-10 bg-slate-50">
+              <tr>
+                <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                  Data/Hora
+                </th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                  Severidade
+                </th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                  Fonte
+                </th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                  ID
+                </th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                  Mensagem
+                </th>
+                <th className="px-4 py-3 text-right font-semibold text-slate-700">
+                  Ações
+                </th>
+              </tr>
+            </thead>
+
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {isLoading && events.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="px-4 py-8 text-center text-slate-500"
+                  >
+                    Carregando eventos...
+                  </td>
+                </tr>
+              ) : null}
+
+              {!isLoading && filteredEvents.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="px-4 py-8 text-center text-slate-500"
+                  >
+                    Nenhum evento encontrado com os filtros atuais.
+                  </td>
+                </tr>
+              ) : null}
+
+              {filteredEvents.map((event) => (
+                <tr key={event.id} className="align-top">
+                  <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                    {event.timeGenerated}
+                  </td>
+
+                  <td className="px-4 py-3">
+                    <span
+                      className={[
+                        'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset',
+                        getEventLevelClassName(event.level),
+                      ].join(' ')}
+                    >
+                      {getEventLevelLabel(event.level)}
+                    </span>
+                  </td>
+
+                  <td className="max-w-xs px-4 py-3 text-slate-700">
+                    {event.source || event.provider || 'Não informado'}
+                  </td>
+
+                  <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                    {event.eventId}
+                  </td>
+
+                  <td className="max-w-2xl px-4 py-3 text-slate-700">
+                    <p className="line-clamp-3 text-xs leading-relaxed">
+                      {event.message || 'Sem mensagem disponível.'}
+                    </p>
+                  </td>
+
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedEvent(event)}
+                      className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                    >
+                      Detalhes
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {selectedEvent ? (
+        <EventDetailsModal
+          event={selectedEvent}
+          onClose={() => setSelectedEvent(null)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+
 function ProcessesPanel({
   processes,
   isLoading,
@@ -1627,6 +2081,45 @@ export function RemoteBackgroundWorkspace({
     }
   }, [customerId, deviceId]);
 
+  const loadEventLog = useCallback(async () => {
+    try {
+      setIsLoadingEventLog(true);
+      setEventLogMessage(null);
+
+      const response = await fetch(
+        `/api/devices/${encodeURIComponent(
+          deviceId,
+        )}/remote-background/eventlog?customerId=${encodeURIComponent(
+          customerId,
+        )}&log=${encodeURIComponent(selectedEventLog)}&page=1`,
+        {
+          method: 'GET',
+          cache: 'no-store',
+        },
+      );
+
+      const data = (await response.json()) as EventLogResponse;
+
+      if (!response.ok || !data.ok) {
+        throw new Error(
+          data.error ?? 'Não foi possível carregar os eventos.',
+        );
+      }
+
+      setEventLogEvents(Array.isArray(data.events) ? data.events : []);
+      setHasLoadedEventLog(true);
+      setEventLogLastUpdatedAt(new Date());
+    } catch (error) {
+      setEventLogMessage(
+        error instanceof Error
+          ? error.message
+          : 'Erro ao carregar eventos.',
+      );
+    } finally {
+      setIsLoadingEventLog(false);
+    }
+  }, [customerId, deviceId, selectedEventLog]);
+
   const runServiceAction = useCallback(
     async (
       service: ServiceItem,
@@ -1791,6 +2284,33 @@ export function RemoteBackgroundWorkspace({
     };
   }, [activeTab, loadProcesses, processAutoRefreshSeconds]);
 
+  useEffect(() => {
+    if (activeTab === 'eventlog' && !hasLoadedEventLog) {
+      void loadEventLog();
+    }
+  }, [activeTab, hasLoadedEventLog, loadEventLog]);
+
+  useEffect(() => {
+    if (activeTab === 'eventlog') {
+      void loadEventLog();
+    }
+  }, [selectedEventLog]);
+
+  useEffect(() => {
+    if (activeTab !== 'eventlog') return;
+    if (eventLogAutoRefreshSeconds < 2) return;
+
+    const intervalId = window.setInterval(() => {
+      void loadEventLog();
+    }, eventLogAutoRefreshSeconds * 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [activeTab, eventLogAutoRefreshSeconds, loadEventLog]);
+
+
+
   return (
     <div className="space-y-5">
       <div className="rounded-2xl border border-surface-border bg-white p-5 shadow-sm">
@@ -1946,9 +2466,21 @@ export function RemoteBackgroundWorkspace({
           ) : null}
 
           {activeTab === 'eventlog' ? (
-            <PlaceholderPanel
-              title="Event Log"
-              description="Próxima fase: consultar eventos do Windows com filtros por log, severidade, origem e período."
+            <EventLogPanel
+              events={eventLogEvents}
+              isLoading={isLoadingEventLog}
+              message={eventLogMessage}
+              selectedLog={selectedEventLog}
+              severityFilter={eventSeverityFilter}
+              autoRefreshSeconds={eventLogAutoRefreshSeconds}
+              lastUpdatedAt={eventLogLastUpdatedAt}
+              onSelectedLogChange={(logName) => {
+                setSelectedEventLog(logName);
+                setHasLoadedEventLog(false);
+              }}
+              onSeverityFilterChange={setEventSeverityFilter}
+              onAutoRefreshChange={setEventLogAutoRefreshSeconds}
+              onRefresh={loadEventLog}
             />
           ) : null}
 
