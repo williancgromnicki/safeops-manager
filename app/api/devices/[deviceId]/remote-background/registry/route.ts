@@ -21,6 +21,15 @@ type DeviceRegistryRow = {
 
 type RawRegistryItem = Record<string, unknown>;
 
+type RawRegistryPayload = {
+  path?: string;
+  subkeys?: RawRegistryItem[] | null;
+  values?: RawRegistryItem[] | null;
+  has_more?: boolean;
+  page?: number;
+  page_size?: number;
+};
+
 const allowedOperationalRoles = new Set(['admin', 'client']);
 
 function cleanString(value?: string | null): string | null {
@@ -50,9 +59,12 @@ function getOperationsApiKey(): string {
 }
 
 function normalizeRegistryPath(path: string | null): string {
-  const cleaned = path?.trim().replace(/\//g, '\\').replace(/\\+/g, '\\');
+  const cleaned = path?.trim().replace(/\/+/, '\\').replace(/\\+/g, '\\');
 
-  return cleaned || 'Computer';
+  if (!cleaned) return 'Computer';
+  if (cleaned === 'Computer') return 'Computer';
+
+  return `${cleaned.replace(/\\+$/g, '')}\\`;
 }
 
 function validateRegistryPath(path: string): boolean {
@@ -69,8 +81,8 @@ function readString(
   for (const key of keys) {
     const value = item[key];
 
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim();
+    if (typeof value === 'string') {
+      return value;
     }
 
     if (typeof value === 'number' && Number.isFinite(value)) {
@@ -85,122 +97,38 @@ function readString(
   return fallback;
 }
 
-function readArray(value: unknown): RawRegistryItem[] {
-  if (!Array.isArray(value)) return [];
+function readBoolean(item: RawRegistryItem, keys: string[], fallback = false) {
+  for (const key of keys) {
+    const value = item[key];
 
-  return value.filter((item): item is RawRegistryItem => {
-    return typeof item === 'object' && item !== null && !Array.isArray(item);
-  });
-}
-
-function getLastPathSegment(path: string) {
-  const parts = path.split('\\').filter(Boolean);
-
-  return parts[parts.length - 1] ?? path;
-}
-
-function buildChildPath(parentPath: string, childName: string) {
-  const normalizedParent = normalizeRegistryPath(parentPath);
-  const normalizedChild = childName.trim();
-
-  if (!normalizedChild) return normalizedParent;
-  if (normalizedChild.includes('\\')) return normalizeRegistryPath(normalizedChild);
-  if (normalizedParent === 'Computer') return `Computer\\${normalizedChild}`;
-
-  return `${normalizedParent}\\${normalizedChild}`;
-}
-
-function normalizeRegistryPayload(data: unknown) {
-  const keys: RawRegistryItem[] = [];
-  const values: RawRegistryItem[] = [];
-
-  if (Array.isArray(data)) {
-    for (const item of readArray(data)) {
-      const itemType = readString(item, ['kind', 'type', 'item_type'], '').toLowerCase();
-
-      if (
-        itemType.includes('key') ||
-        itemType.includes('folder') ||
-        itemType.includes('subkey')
-      ) {
-        keys.push(item);
-        continue;
-      }
-
-      values.push(item);
-    }
-
-    return { keys, values };
-  }
-
-  if (typeof data !== 'object' || data === null) {
-    return { keys, values };
-  }
-
-  const payload = data as Record<string, unknown>;
-
-  keys.push(
-    ...readArray(payload.keys),
-    ...readArray(payload.subkeys),
-    ...readArray(payload.children),
-    ...readArray(payload.folders),
-  );
-
-  values.push(
-    ...readArray(payload.values),
-    ...readArray(payload.data),
-    ...readArray(payload.items),
-  );
-
-  if (keys.length === 0 && values.length === 0) {
-    for (const value of Object.values(payload)) {
-      if (Array.isArray(value)) {
-        for (const item of readArray(value)) {
-          const itemType = readString(
-            item,
-            ['kind', 'type', 'item_type'],
-            '',
-          ).toLowerCase();
-
-          if (
-            itemType.includes('key') ||
-            itemType.includes('folder') ||
-            itemType.includes('subkey')
-          ) {
-            keys.push(item);
-          } else {
-            values.push(item);
-          }
-        }
-      }
+    if (typeof value === 'boolean') {
+      return value;
     }
   }
 
-  return { keys, values };
+  return fallback;
 }
 
-function normalizeRegistryValue(value: unknown): string {
-  if (value === null || value === undefined) {
-    return '';
-  }
-
-  if (typeof value === 'string') {
-    return value;
-  }
-
-  if (
-    typeof value === 'number' ||
-    typeof value === 'boolean' ||
-    typeof value === 'bigint'
-  ) {
-    return String(value);
-  }
+function normalizeData(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
 
   try {
     return JSON.stringify(value, null, 2);
   } catch {
     return String(value);
   }
+}
+
+function buildChildPath(parentPath: string, childName: string) {
+  const parent = normalizeRegistryPath(parentPath);
+  const child = childName.trim().replace(/^\\+|\\+$/g, '');
+
+  if (!child) return parent;
+  if (parent === 'Computer') return `${child}\\`;
+
+  return `${parent.replace(/\\+$/g, '')}\\${child}\\`;
 }
 
 async function getAuthenticatedUser() {
@@ -313,30 +241,14 @@ async function fetchRegistry(input: {
     method: 'GET',
     headers: {
       'X-API-KEY': apiKey,
-      'Content-Type': 'application/json',
+      Accept: 'application/json',
     },
     cache: 'no-store',
   });
 
-  const contentType = response.headers.get('content-type') ?? '';
-  const text = await response.text();
-
-  let data: unknown = null;
-
-  if (contentType.includes('application/json')) {
-    try {
-      data = JSON.parse(text);
-    } catch {
-      data = null;
-    }
-  }
+  const data = (await response.json()) as RawRegistryPayload;
 
   if (!response.ok) {
-    console.error('Erro ao consultar registro do dispositivo:', {
-      status: response.status,
-      body: text,
-    });
-
     throw new Error('Não foi possível consultar o registro do dispositivo.');
   }
 
@@ -446,68 +358,38 @@ export async function GET(request: NextRequest, context: RegistryRouteContext) {
       pageSize: safePageSize,
     });
 
-    const normalized = normalizeRegistryPayload(raw);
-
     return NextResponse.json({
       ok: true,
-      path: registryPath,
-      page: safePage,
-      pageSize: safePageSize,
+      path: raw.path ?? registryPath,
+      page: raw.page ?? safePage,
+      pageSize: raw.page_size ?? safePageSize,
+      hasMore: Boolean(raw.has_more),
       device: {
         id: device.id,
         hostname: device.hostname,
         customerId: activeCustomer.customerId,
       },
-      keys: normalized.keys.map((item, index) => {
-        const itemPath = readString(item, ['path', 'full_path', 'key_path'], '');
-        const name = readString(
-          item,
-          ['name', 'key', 'display_name', 'Name'],
-          itemPath ? getLastPathSegment(itemPath) : `Chave ${index + 1}`,
-        );
-        const path = itemPath || buildChildPath(registryPath, name);
+      keys: (raw.subkeys ?? []).map((item) => {
+        const name = readString(item, ['name', 'Name'], 'Não informado');
 
         return {
           name,
-          path,
-          lastModified: readString(
-            item,
-            ['last_modified', 'modified', 'LastWriteTime'],
-            '',
-          ),
-          raw: item,
+          path: buildChildPath(raw.path ?? registryPath, name),
+          hasSubkeys: readBoolean(item, ['hasSubkeys', 'has_subkeys'], false),
         };
       }),
-      values: normalized.values.map((item, index) => {
-        const name = readString(
-          item,
-          ['name', 'value_name', 'Name'],
-          index === 0 ? '(Padrão)' : `Valor ${index + 1}`,
-        );
-        const type = readString(
-          item,
-          ['value_type', 'type', 'kind', 'Type'],
-          'Não informado',
-        );
-
-        const rawValue =
-          item.value ??
-          item.data ??
-          item.Value ??
-          item.Data ??
-          item.content ??
-          item.Content ??
-          '';
+      values: (raw.values ?? []).map((item) => {
+        const name = readString(item, ['name', 'Name'], '');
+        const type = readString(item, ['type', 'Type'], 'REG_SZ');
+        const data = item.data ?? item.Data ?? item.value ?? item.Value ?? '';
 
         return {
           name,
           type,
-          value: normalizeRegistryValue(rawValue),
-          path: registryPath,
-          raw: item,
+          data: normalizeData(data),
+          path: raw.path ?? registryPath,
         };
       }),
-      raw,
     });
   } catch (error) {
     return NextResponse.json(
