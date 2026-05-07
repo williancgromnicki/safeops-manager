@@ -70,13 +70,12 @@ const ADMIN_NAV_ITEMS: NavItem[] = [
     href: '/admin/customers',
     label: 'Clientes e sites',
     preserveCustomer: false,
-    disabled: true,
   },
   {
-  href: '/admin/users',
-  label: 'Usuários e permissões',
-  preserveCustomer: true,
-},
+    href: '/admin/users',
+    label: 'Usuários e permissões',
+    preserveCustomer: true,
+  },
   {
     href: '/admin/agent-installers',
     label: 'Instaladores de agentes',
