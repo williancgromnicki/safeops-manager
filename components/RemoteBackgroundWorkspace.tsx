@@ -36,7 +36,9 @@ type ServiceActionResponse = {
   error?: string;
 };
 
-type ServiceAction = 'start' | 'stop' | 'restart';
+type ServiceAction = 'start' | 'stop' | 'restart' | 'set_startup';
+
+type StartupType = 'automatic' | 'delayed' | 'manual' | 'disabled';
 
 type ServiceItem = {
   name: string;
@@ -152,12 +154,52 @@ function getServiceStatusClassName(status: string) {
 function getActionLabel(action: ServiceAction) {
   if (action === 'start') return 'Iniciar';
   if (action === 'stop') return 'Parar';
+  if (action === 'restart') return 'Reiniciar';
 
-  return 'Reiniciar';
+  return 'Salvar tipo de inicialização';
 }
 
 function formatPid(pid: number) {
   return pid > 0 ? String(pid) : '—';
+}
+
+function normalizeStartupType(startType: string): StartupType {
+  const normalized = startType.toLowerCase();
+
+  if (
+    normalized.includes('delayed') ||
+    normalized.includes('atras') ||
+    normalized.includes('automático com atraso') ||
+    normalized.includes('automatic delayed')
+  ) {
+    return 'delayed';
+  }
+
+  if (
+    normalized.includes('auto') ||
+    normalized.includes('automático') ||
+    normalized.includes('automatic')
+  ) {
+    return 'automatic';
+  }
+
+  if (
+    normalized.includes('disabled') ||
+    normalized.includes('desabilitado') ||
+    normalized.includes('desativado')
+  ) {
+    return 'disabled';
+  }
+
+  return 'manual';
+}
+
+function getStartupLabel(value: StartupType) {
+  if (value === 'automatic') return 'Automático';
+  if (value === 'delayed') return 'Automático com atraso';
+  if (value === 'manual') return 'Manual';
+
+  return 'Desabilitado';
 }
 
 function PlaceholderPanel({
@@ -192,11 +234,26 @@ function PlaceholderPanel({
 
 function ServiceDetailsModal({
   service,
+  isSavingStartup,
+  onSaveStartup,
   onClose,
 }: {
   service: ServiceItem;
+  isSavingStartup: boolean;
+  onSaveStartup: (service: ServiceItem, startupType: StartupType) => Promise<void>;
   onClose: () => void;
 }) {
+  const [startupType, setStartupType] = useState<StartupType>(
+    normalizeStartupType(service.startType),
+  );
+
+  const currentStartupType = normalizeStartupType(service.startType);
+  const hasStartupChanged = startupType !== currentStartupType;
+
+  async function handleSaveStartup() {
+    await onSaveStartup(service, startupType);
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4 py-6">
       <div className="w-full max-w-3xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
@@ -217,7 +274,8 @@ function ServiceDetailsModal({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg px-2 py-1 text-sm font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+              disabled={isSavingStartup}
+              className="rounded-lg px-2 py-1 text-sm font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
               aria-label="Fechar propriedades"
             >
               ✕
@@ -237,11 +295,30 @@ function ServiceDetailsModal({
             </div>
 
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <label
+                htmlFor="startup-type"
+                className="text-xs font-semibold uppercase tracking-wide text-slate-500"
+              >
                 Tipo de inicialização
-              </p>
-              <p className="mt-1 font-medium text-slate-900">
-                {service.startType}
+              </label>
+
+              <select
+                id="startup-type"
+                value={startupType}
+                onChange={(event) =>
+                  setStartupType(event.target.value as StartupType)
+                }
+                disabled={isSavingStartup}
+                className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-60"
+              >
+                <option value="automatic">Automático</option>
+                <option value="delayed">Automático com atraso</option>
+                <option value="manual">Manual</option>
+                <option value="disabled">Desabilitado</option>
+              </select>
+
+              <p className="mt-2 text-xs text-slate-500">
+                Atual: {getStartupLabel(currentStartupType)}
               </p>
             </div>
 
@@ -290,13 +367,23 @@ function ServiceDetailsModal({
           </div>
         </div>
 
-        <div className="border-t border-slate-100 bg-slate-50 px-5 py-4 text-right">
+        <div className="flex flex-col-reverse gap-2 border-t border-slate-100 bg-slate-50 px-5 py-4 sm:flex-row sm:justify-end">
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            disabled={isSavingStartup}
+            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Fechar
+          </button>
+
+          <button
+            type="button"
+            onClick={handleSaveStartup}
+            disabled={isSavingStartup || !hasStartupChanged}
+            className="inline-flex items-center justify-center rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isSavingStartup ? 'Salvando...' : 'Salvar tipo de inicialização'}
           </button>
         </div>
       </div>
@@ -381,6 +468,7 @@ function ServicesPanel({
   activeServiceAction,
   onRefresh,
   onRunAction,
+  onSaveStartup,
 }: {
   services: ServiceItem[];
   isLoading: boolean;
@@ -390,6 +478,7 @@ function ServicesPanel({
   activeServiceAction: string | null;
   onRefresh: () => void;
   onRunAction: (service: ServiceItem, action: ServiceAction) => Promise<void>;
+  onSaveStartup: (service: ServiceItem, startupType: StartupType) => Promise<void>;
 }) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<
@@ -435,6 +524,14 @@ function ServicesPanel({
 
     await onRunAction(pendingAction.service, pendingAction.action);
     setPendingAction(null);
+  }
+
+  async function handleSaveStartup(
+    service: ServiceItem,
+    startupType: StartupType,
+  ) {
+    await onSaveStartup(service, startupType);
+    setSelectedService(null);
   }
 
   return (
@@ -600,7 +697,7 @@ function ServicesPanel({
                     </td>
 
                     <td className="whitespace-nowrap px-4 py-3 text-slate-700">
-                      {service.startType}
+                      {getStartupLabel(normalizeStartupType(service.startType))}
                     </td>
 
                     <td className="whitespace-nowrap px-4 py-3 text-slate-700">
@@ -684,6 +781,8 @@ function ServicesPanel({
       {selectedService ? (
         <ServiceDetailsModal
           service={selectedService}
+          isSavingStartup={activeServiceAction === selectedService.name}
+          onSaveStartup={handleSaveStartup}
           onClose={() => setSelectedService(null)}
         />
       ) : null}
@@ -806,7 +905,11 @@ export function RemoteBackgroundWorkspace({
   }, [customerId, deviceId]);
 
   const runServiceAction = useCallback(
-    async (service: ServiceItem, action: ServiceAction) => {
+    async (
+      service: ServiceItem,
+      action: ServiceAction,
+      startupType?: StartupType,
+    ) => {
       try {
         setActiveServiceAction(service.name);
         setServiceActionMessage(null);
@@ -827,6 +930,7 @@ export function RemoteBackgroundWorkspace({
             body: JSON.stringify({
               serviceName: service.name,
               action,
+              startupType: startupType ?? null,
             }),
           },
         );
@@ -857,6 +961,13 @@ export function RemoteBackgroundWorkspace({
       }
     },
     [customerId, deviceId, loadServices],
+  );
+
+  const saveServiceStartup = useCallback(
+    async (service: ServiceItem, startupType: StartupType) => {
+      await runServiceAction(service, 'set_startup', startupType);
+    },
+    [runServiceAction],
   );
 
   useEffect(() => {
@@ -1000,6 +1111,7 @@ export function RemoteBackgroundWorkspace({
               activeServiceAction={activeServiceAction}
               onRefresh={loadServices}
               onRunAction={runServiceAction}
+              onSaveStartup={saveServiceStartup}
             />
           ) : null}
 
