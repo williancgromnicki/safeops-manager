@@ -38,7 +38,7 @@ const tabs: Array<{
   {
     key: 'terminal',
     label: 'Terminal',
-    description: 'Sessão de terminal remoto via MeshCentral.',
+    description: 'Sessão de terminal remoto para suporte e administração.',
   },
   {
     key: 'files',
@@ -58,7 +58,7 @@ const tabs: Array<{
   {
     key: 'eventlog',
     label: 'Event Log',
-    description: 'Eventos do Windows coletados via TRMM API.',
+    description: 'Eventos do Windows com filtros operacionais.',
   },
   {
     key: 'registry',
@@ -114,9 +114,9 @@ function PlaceholderPanel({
         </p>
 
         <p className="mt-4 text-xs leading-relaxed text-slate-500">
-          Esta aba será reconstruída dentro do SafeOps Manager usando endpoints
-          internos que consomem a API oficial do TRMM. Nenhuma sessão web do TRMM
-          será exigida do usuário final.
+          Esta funcionalidade será disponibilizada em uma próxima atualização do
+          SafeOps Manager, com controle de permissão, rastreabilidade e operação
+          segura para equipes de TI.
         </p>
       </div>
     </div>
@@ -139,10 +139,46 @@ export function RemoteBackgroundWorkspace({
     [activeTab],
   );
 
+  async function loadTerminalSession() {
+    try {
+      setIsLoadingTerminal(true);
+      setMessage(null);
+
+      const response = await fetch(
+        `/api/devices/${encodeURIComponent(
+          deviceId,
+        )}/remote-background?customerId=${encodeURIComponent(customerId)}`,
+        {
+          method: 'POST',
+          cache: 'no-store',
+        },
+      );
+
+      const data = (await response.json()) as RemoteBackgroundResponse;
+
+      if (!response.ok || !data.ok || !data.url) {
+        throw new Error(
+          data.error ?? 'Não foi possível abrir a sessão remota.',
+        );
+      }
+
+      setTerminalUrl(data.url);
+      setMeshStatus(data.mesh?.status ?? null);
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'Erro ao abrir sessão remota.',
+      );
+    } finally {
+      setIsLoadingTerminal(false);
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
 
-    async function loadTerminalSession() {
+    async function loadInitialSession() {
       try {
         setIsLoadingTerminal(true);
         setMessage(null);
@@ -161,8 +197,7 @@ export function RemoteBackgroundWorkspace({
 
         if (!response.ok || !data.ok || !data.url) {
           throw new Error(
-            data.error ??
-              'Não foi possível abrir a sessão Remote Background.',
+            data.error ?? 'Não foi possível abrir a sessão remota.',
           );
         }
 
@@ -175,7 +210,7 @@ export function RemoteBackgroundWorkspace({
           setMessage(
             error instanceof Error
               ? error.message
-              : 'Erro ao abrir Remote Background.',
+              : 'Erro ao abrir sessão remota.',
           );
         }
       } finally {
@@ -185,7 +220,7 @@ export function RemoteBackgroundWorkspace({
       }
     }
 
-    loadTerminalSession();
+    loadInitialSession();
 
     return () => {
       cancelled = true;
@@ -198,7 +233,7 @@ export function RemoteBackgroundWorkspace({
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">
-              Remote Background
+              Operação remota
             </p>
 
             <h2 className="mt-1 text-xl font-semibold text-slate-950">
@@ -206,9 +241,8 @@ export function RemoteBackgroundWorkspace({
             </h2>
 
             <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600">
-              Console operacional remoto reconstruído dentro do SafeOps Manager.
-              A aba Terminal usa uma URL temporária do MeshCentral gerada pelo
-              backend via API oficial do TRMM.
+              Console operacional remoto para suporte, diagnóstico e
+              administração segura do dispositivo.
             </p>
           </div>
 
@@ -224,50 +258,7 @@ export function RemoteBackgroundWorkspace({
 
             <button
               type="button"
-              onClick={() => {
-                setTerminalUrl(null);
-                setMeshStatus(null);
-                setMessage(null);
-
-                void (async () => {
-                  try {
-                    setIsLoadingTerminal(true);
-
-                    const response = await fetch(
-                      `/api/devices/${encodeURIComponent(
-                        deviceId,
-                      )}/remote-background?customerId=${encodeURIComponent(
-                        customerId,
-                      )}`,
-                      {
-                        method: 'POST',
-                        cache: 'no-store',
-                      },
-                    );
-
-                    const data =
-                      (await response.json()) as RemoteBackgroundResponse;
-
-                    if (!response.ok || !data.ok || !data.url) {
-                      throw new Error(
-                        data.error ??
-                          'Não foi possível renovar a sessão Remote Background.',
-                      );
-                    }
-
-                    setTerminalUrl(data.url);
-                    setMeshStatus(data.mesh?.status ?? null);
-                  } catch (error) {
-                    setMessage(
-                      error instanceof Error
-                        ? error.message
-                        : 'Erro ao renovar sessão Remote Background.',
-                    );
-                  } finally {
-                    setIsLoadingTerminal(false);
-                  }
-                })();
-              }}
+              onClick={loadTerminalSession}
               disabled={isLoadingTerminal}
               className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
@@ -322,7 +313,7 @@ export function RemoteBackgroundWorkspace({
                       Abrindo sessão de terminal...
                     </p>
                     <p className="mt-2 text-xs text-slate-300">
-                      Gerando URL temporária do MeshCentral via API oficial.
+                      Aguarde enquanto a sessão segura é preparada.
                     </p>
                   </div>
                 </div>
