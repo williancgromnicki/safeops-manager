@@ -1,4 +1,6 @@
-'use client';
+from pathlib import Path
+
+content = r"""'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -28,7 +30,21 @@ type ServicesResponse = {
   services?: ServiceItem[];
 };
 
+type ProcessesResponse = {
+  ok: boolean;
+  error?: string;
+  processes?: ProcessItem[];
+};
+
 type ServiceActionResponse = {
+  ok: boolean;
+  status?: 'success' | 'warning' | 'failed';
+  message?: string;
+  output?: string;
+  error?: string;
+};
+
+type ProcessActionResponse = {
   ok: boolean;
   status?: 'success' | 'warning' | 'failed';
   message?: string;
@@ -50,6 +66,18 @@ type ServiceItem = {
   description: string;
   binPath: string;
   autoDelay: boolean;
+};
+
+type ProcessItem = {
+  pid: number;
+  name: string;
+  username: string;
+  cpuPercent: number;
+  memoryMb: number;
+  path: string;
+  commandLine: string;
+  status: string;
+  raw?: unknown;
 };
 
 type RemoteTab =
@@ -95,6 +123,14 @@ const tabs: Array<{
     label: 'Registry',
     description: 'Consulta controlada ao Registro do Windows.',
   },
+];
+
+const autoRefreshOptions = [
+  { label: 'Desligado', value: 0 },
+  { label: '2 segundos', value: 2 },
+  { label: '5 segundos', value: 5 },
+  { label: '10 segundos', value: 10 },
+  { label: '30 segundos', value: 30 },
 ];
 
 function getStatusLabel(status?: string | null) {
@@ -161,6 +197,22 @@ function getActionLabel(action: ServiceAction) {
 
 function formatPid(pid: number) {
   return pid > 0 ? String(pid) : '—';
+}
+
+function formatCpu(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return '—';
+
+  return `${value.toFixed(value >= 10 ? 0 : 1)}%`;
+}
+
+function formatMemory(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return '—';
+
+  if (value >= 1024) {
+    return `${(value / 1024).toFixed(1)} GB`;
+  }
+
+  return `${value.toFixed(value >= 10 ? 0 : 1)} MB`;
 }
 
 function normalizeStartupType(startType: string): StartupType {
@@ -240,7 +292,10 @@ function ServiceDetailsModal({
 }: {
   service: ServiceItem;
   isSavingStartup: boolean;
-  onSaveStartup: (service: ServiceItem, startupType: StartupType) => Promise<void>;
+  onSaveStartup: (
+    service: ServiceItem,
+    startupType: StartupType,
+  ) => Promise<void>;
   onClose: () => void;
 }) {
   const [startupType, setStartupType] = useState<StartupType>(
@@ -459,6 +514,182 @@ function ServiceActionConfirmModal({
   );
 }
 
+function ProcessDetailsModal({
+  process,
+  onClose,
+}: {
+  process: ProcessItem;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4 py-6">
+      <div className="w-full max-w-3xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        <div className="border-b border-slate-100 px-5 py-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">
+                Detalhes do processo
+              </p>
+
+              <h3 className="mt-1 text-lg font-semibold text-slate-950">
+                {process.name}
+              </h3>
+
+              <p className="mt-1 text-sm text-slate-500">
+                PID {formatPid(process.pid)}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg px-2 py-1 text-sm font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+              aria-label="Fechar detalhes"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <div className="max-h-[70vh] space-y-5 overflow-auto px-5 py-5">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Usuário
+              </p>
+              <p className="mt-1 break-all font-medium text-slate-900">
+                {process.username}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Status
+              </p>
+              <p className="mt-1 font-medium text-slate-900">
+                {process.status || 'Não informado'}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                CPU
+              </p>
+              <p className="mt-1 font-medium text-slate-900">
+                {formatCpu(process.cpuPercent)}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Memória
+              </p>
+              <p className="mt-1 font-medium text-slate-900">
+                {formatMemory(process.memoryMb)}
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Caminho do executável
+            </p>
+            <pre className="mt-2 overflow-auto rounded-xl border border-slate-200 bg-slate-950 p-4 text-xs leading-relaxed text-slate-100">
+              {process.path || 'Não informado'}
+            </pre>
+          </div>
+
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Linha de comando
+            </p>
+            <pre className="mt-2 overflow-auto rounded-xl border border-slate-200 bg-slate-950 p-4 text-xs leading-relaxed text-slate-100">
+              {process.commandLine || 'Não informado'}
+            </pre>
+          </div>
+        </div>
+
+        <div className="border-t border-slate-100 bg-slate-50 px-5 py-4 text-right">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+          >
+            Fechar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProcessKillConfirmModal({
+  process,
+  isRunning,
+  onConfirm,
+  onClose,
+}: {
+  process: ProcessItem;
+  isRunning: boolean;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4 py-6">
+      <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        <div className="border-b border-slate-100 px-5 py-4">
+          <h3 className="text-lg font-semibold text-slate-950">
+            Finalizar processo
+          </h3>
+          <p className="mt-1 text-sm text-slate-600">
+            Esta ação encerrará o processo selecionado no dispositivo.
+          </p>
+        </div>
+
+        <div className="space-y-4 px-5 py-5">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Processo
+            </p>
+            <p className="mt-1 font-semibold text-slate-900">
+              {process.name}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              PID {formatPid(process.pid)}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm leading-relaxed text-rose-800">
+            Confirme apenas se você entende o impacto operacional dessa ação.
+            Encerrar processos críticos pode causar instabilidade em aplicações
+            ou serviços.
+          </div>
+        </div>
+
+        <div className="flex flex-col-reverse gap-2 border-t border-slate-100 bg-slate-50 px-5 py-4 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isRunning}
+            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Cancelar
+          </button>
+
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isRunning}
+            className="inline-flex items-center justify-center rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-800 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isRunning ? 'Finalizando...' : 'Finalizar processo'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ServicesPanel({
   services,
   isLoading,
@@ -478,7 +709,10 @@ function ServicesPanel({
   activeServiceAction: string | null;
   onRefresh: () => void;
   onRunAction: (service: ServiceItem, action: ServiceAction) => Promise<void>;
-  onSaveStartup: (service: ServiceItem, startupType: StartupType) => Promise<void>;
+  onSaveStartup: (
+    service: ServiceItem,
+    startupType: StartupType,
+  ) => Promise<void>;
 }) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<
@@ -800,6 +1034,256 @@ function ServicesPanel({
   );
 }
 
+function ProcessesPanel({
+  processes,
+  isLoading,
+  message,
+  actionMessage,
+  actionMessageType,
+  activeProcessAction,
+  autoRefreshSeconds,
+  onAutoRefreshChange,
+  onRefresh,
+  onKillProcess,
+}: {
+  processes: ProcessItem[];
+  isLoading: boolean;
+  message: string | null;
+  actionMessage: string | null;
+  actionMessageType: 'success' | 'warning' | 'error' | null;
+  activeProcessAction: number | null;
+  autoRefreshSeconds: number;
+  onAutoRefreshChange: (seconds: number) => void;
+  onRefresh: () => void;
+  onKillProcess: (process: ProcessItem) => Promise<void>;
+}) {
+  const [search, setSearch] = useState('');
+  const [selectedProcess, setSelectedProcess] = useState<ProcessItem | null>(
+    null,
+  );
+  const [pendingKillProcess, setPendingKillProcess] =
+    useState<ProcessItem | null>(null);
+
+  const filteredProcesses = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+
+    return processes.filter((process) => {
+      if (!normalizedSearch) return true;
+
+      return (
+        String(process.pid).includes(normalizedSearch) ||
+        process.name.toLowerCase().includes(normalizedSearch) ||
+        process.username.toLowerCase().includes(normalizedSearch) ||
+        process.path.toLowerCase().includes(normalizedSearch) ||
+        process.commandLine.toLowerCase().includes(normalizedSearch)
+      );
+    });
+  }, [processes, search]);
+
+  async function confirmKillProcess() {
+    if (!pendingKillProcess) return;
+
+    await onKillProcess(pendingKillProcess);
+    setPendingKillProcess(null);
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 xl:flex-row xl:items-center xl:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">
+            Processos em execução
+          </h3>
+
+          <p className="mt-1 text-xs text-slate-600">
+            {processes.length} processos encontrados
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Buscar por nome, PID, usuário ou caminho..."
+            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 lg:w-80"
+          />
+
+          <select
+            value={autoRefreshSeconds}
+            onChange={(event) => onAutoRefreshChange(Number(event.target.value))}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+          >
+            {autoRefreshOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                Auto refresh: {option.label}
+              </option>
+            ))}
+          </select>
+
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={isLoading}
+            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isLoading ? 'Atualizando...' : 'Atualizar'}
+          </button>
+        </div>
+      </div>
+
+      {message ? (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          {message}
+        </div>
+      ) : null}
+
+      {actionMessage ? (
+        <div
+          className={[
+            'rounded-xl border px-4 py-3 text-sm',
+            actionMessageType === 'success'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+              : null,
+            actionMessageType === 'warning'
+              ? 'border-amber-200 bg-amber-50 text-amber-800'
+              : null,
+            actionMessageType === 'error'
+              ? 'border-rose-200 bg-rose-50 text-rose-800'
+              : null,
+          ]
+            .filter(Boolean)
+            .join(' ')}
+        >
+          {actionMessage}
+        </div>
+      ) : null}
+
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        <div className="max-h-[620px] overflow-auto">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="sticky top-0 z-10 bg-slate-50">
+              <tr>
+                <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                  Processo
+                </th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                  PID
+                </th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                  Usuário
+                </th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                  CPU
+                </th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                  Memória
+                </th>
+                <th className="px-4 py-3 text-right font-semibold text-slate-700">
+                  Ações
+                </th>
+              </tr>
+            </thead>
+
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {isLoading && processes.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="px-4 py-8 text-center text-slate-500"
+                  >
+                    Carregando processos...
+                  </td>
+                </tr>
+              ) : null}
+
+              {!isLoading && filteredProcesses.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="px-4 py-8 text-center text-slate-500"
+                  >
+                    Nenhum processo encontrado com os filtros atuais.
+                  </td>
+                </tr>
+              ) : null}
+
+              {filteredProcesses.map((process) => (
+                <tr key={`${process.pid}-${process.name}`} className="align-top">
+                  <td className="max-w-xl px-4 py-3">
+                    <p className="font-semibold text-slate-900">
+                      {process.name}
+                    </p>
+
+                    {process.path ? (
+                      <p className="mt-1 max-w-xl break-all text-xs text-slate-500">
+                        {process.path}
+                      </p>
+                    ) : null}
+                  </td>
+
+                  <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                    {formatPid(process.pid)}
+                  </td>
+
+                  <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                    {process.username}
+                  </td>
+
+                  <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                    {formatCpu(process.cpuPercent)}
+                  </td>
+
+                  <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                    {formatMemory(process.memoryMb)}
+                  </td>
+
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedProcess(process)}
+                        className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                      >
+                        Detalhes
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setPendingKillProcess(process)}
+                        disabled={activeProcessAction === process.pid}
+                        className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-semibold text-rose-700 shadow-sm transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Finalizar
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {selectedProcess ? (
+        <ProcessDetailsModal
+          process={selectedProcess}
+          onClose={() => setSelectedProcess(null)}
+        />
+      ) : null}
+
+      {pendingKillProcess ? (
+        <ProcessKillConfirmModal
+          process={pendingKillProcess}
+          isRunning={activeProcessAction === pendingKillProcess.pid}
+          onClose={() => setPendingKillProcess(null)}
+          onConfirm={confirmKillProcess}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 export function RemoteBackgroundWorkspace({
   deviceId,
   customerId,
@@ -824,6 +1308,22 @@ export function RemoteBackgroundWorkspace({
   const [serviceActionMessageType, setServiceActionMessageType] = useState<
     'success' | 'warning' | 'error' | null
   >(null);
+
+  const [processes, setProcesses] = useState<ProcessItem[]>([]);
+  const [isLoadingProcesses, setIsLoadingProcesses] = useState(false);
+  const [processesMessage, setProcessesMessage] = useState<string | null>(null);
+  const [hasLoadedProcesses, setHasLoadedProcesses] = useState(false);
+  const [activeProcessAction, setActiveProcessAction] = useState<number | null>(
+    null,
+  );
+  const [processActionMessage, setProcessActionMessage] = useState<
+    string | null
+  >(null);
+  const [processActionMessageType, setProcessActionMessageType] = useState<
+    'success' | 'warning' | 'error' | null
+  >(null);
+  const [processAutoRefreshSeconds, setProcessAutoRefreshSeconds] =
+    useState(0);
 
   const activeTabDescription = useMemo(
     () => tabs.find((tab) => tab.key === activeTab)?.description ?? '',
@@ -904,6 +1404,44 @@ export function RemoteBackgroundWorkspace({
     }
   }, [customerId, deviceId]);
 
+  const loadProcesses = useCallback(async () => {
+    try {
+      setIsLoadingProcesses(true);
+      setProcessesMessage(null);
+
+      const response = await fetch(
+        `/api/devices/${encodeURIComponent(
+          deviceId,
+        )}/remote-background/processes?customerId=${encodeURIComponent(
+          customerId,
+        )}`,
+        {
+          method: 'GET',
+          cache: 'no-store',
+        },
+      );
+
+      const data = (await response.json()) as ProcessesResponse;
+
+      if (!response.ok || !data.ok) {
+        throw new Error(
+          data.error ?? 'Não foi possível carregar os processos.',
+        );
+      }
+
+      setProcesses(Array.isArray(data.processes) ? data.processes : []);
+      setHasLoadedProcesses(true);
+    } catch (error) {
+      setProcessesMessage(
+        error instanceof Error
+          ? error.message
+          : 'Erro ao carregar processos.',
+      );
+    } finally {
+      setIsLoadingProcesses(false);
+    }
+  }, [customerId, deviceId]);
+
   const runServiceAction = useCallback(
     async (
       service: ServiceItem,
@@ -970,6 +1508,61 @@ export function RemoteBackgroundWorkspace({
     [runServiceAction],
   );
 
+  const killProcess = useCallback(
+    async (process: ProcessItem) => {
+      try {
+        setActiveProcessAction(process.pid);
+        setProcessActionMessage(null);
+        setProcessActionMessageType(null);
+
+        const response = await fetch(
+          `/api/devices/${encodeURIComponent(
+            deviceId,
+          )}/remote-background/processes/action?customerId=${encodeURIComponent(
+            customerId,
+          )}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            cache: 'no-store',
+            body: JSON.stringify({
+              action: 'kill',
+              pid: process.pid,
+              processName: process.name,
+            }),
+          },
+        );
+
+        const data = (await response.json()) as ProcessActionResponse;
+
+        if (!response.ok || !data.ok) {
+          throw new Error(
+            data.error ?? data.message ?? 'Não foi possível finalizar o processo.',
+          );
+        }
+
+        setProcessActionMessage(data.message ?? 'Processo finalizado.');
+        setProcessActionMessageType(
+          data.status === 'warning' ? 'warning' : 'success',
+        );
+
+        await loadProcesses();
+      } catch (error) {
+        setProcessActionMessage(
+          error instanceof Error
+            ? error.message
+            : 'Erro ao finalizar processo.',
+        );
+        setProcessActionMessageType('error');
+      } finally {
+        setActiveProcessAction(null);
+      }
+    },
+    [customerId, deviceId, loadProcesses],
+  );
+
   useEffect(() => {
     void loadTerminalSession();
   }, [loadTerminalSession]);
@@ -979,6 +1572,25 @@ export function RemoteBackgroundWorkspace({
       void loadServices();
     }
   }, [activeTab, hasLoadedServices, loadServices]);
+
+  useEffect(() => {
+    if (activeTab === 'processes' && !hasLoadedProcesses) {
+      void loadProcesses();
+    }
+  }, [activeTab, hasLoadedProcesses, loadProcesses]);
+
+  useEffect(() => {
+    if (activeTab !== 'processes') return;
+    if (processAutoRefreshSeconds < 2) return;
+
+    const intervalId = window.setInterval(() => {
+      void loadProcesses();
+    }, processAutoRefreshSeconds * 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [activeTab, loadProcesses, processAutoRefreshSeconds]);
 
   return (
     <div className="space-y-5">
@@ -1073,7 +1685,7 @@ export function RemoteBackgroundWorkspace({
                   </div>
                 ) : terminalUrl ? (
                   <iframe
-                    title={`Remote Background Terminal - ${deviceName}`}
+                    title={`Sessão de terminal - ${deviceName}`}
                     src={terminalUrl}
                     className="h-[720px] w-full bg-white"
                     allow="clipboard-read; clipboard-write; fullscreen"
@@ -1116,9 +1728,17 @@ export function RemoteBackgroundWorkspace({
           ) : null}
 
           {activeTab === 'processes' ? (
-            <PlaceholderPanel
-              title="Processes"
-              description="Próxima fase: listar processos em execução e permitir ações administrativas controladas."
+            <ProcessesPanel
+              processes={processes}
+              isLoading={isLoadingProcesses}
+              message={processesMessage}
+              actionMessage={processActionMessage}
+              actionMessageType={processActionMessageType}
+              activeProcessAction={activeProcessAction}
+              autoRefreshSeconds={processAutoRefreshSeconds}
+              onAutoRefreshChange={setProcessAutoRefreshSeconds}
+              onRefresh={loadProcesses}
+              onKillProcess={killProcess}
             />
           ) : null}
 
@@ -1140,3 +1760,9 @@ export function RemoteBackgroundWorkspace({
     </div>
   );
 }
+"""
+
+path = Path("/mnt/data/RemoteBackgroundWorkspace.tsx")
+path.write_text(content, encoding="utf-8")
+print(f"Arquivo gerado: {path}")
+print(f"Tamanho: {path.stat().st_size} bytes")
