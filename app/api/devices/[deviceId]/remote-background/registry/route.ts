@@ -110,7 +110,7 @@ function buildChildPath(parentPath: string, childName: string) {
   return `${normalizedParent}\\${normalizedChild}`;
 }
 
-function normalizeRegistryPayload(data: unknown, requestedPath: string) {
+function normalizeRegistryPayload(data: unknown) {
   const keys: RawRegistryItem[] = [];
   const values: RawRegistryItem[] = [];
 
@@ -446,7 +446,7 @@ export async function GET(request: NextRequest, context: RegistryRouteContext) {
       pageSize: safePageSize,
     });
 
-    const normalized = normalizeRegistryPayload(raw, registryPath);
+    const normalized = normalizeRegistryPayload(raw);
 
     return NextResponse.json({
       ok: true,
