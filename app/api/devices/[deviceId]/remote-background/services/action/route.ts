@@ -19,7 +19,9 @@ type DeviceServicesActionRow = {
   tactical_agent_id: string | null;
 };
 
-type ServiceAction = 'start' | 'stop' | 'restart';
+type ServiceAction = 'start' | 'stop' | 'restart' | 'set_startup';
+
+type StartupType = 'automatic' | 'delayed' | 'manual' | 'disabled';
 
 const allowedOperationalRoles = new Set(['admin', 'client']);
 
@@ -50,11 +52,6 @@ function getOperationsApiKey(): string {
 }
 
 function validateServiceName(serviceName: string): boolean {
-  /*
-    Nome de serviço Windows normalmente aceita letras, números,
-    espaço, ponto, underscore, hífen, parênteses e alguns caracteres comuns.
-    Bloqueamos caracteres usados para encadear comandos: &, |, >, <, ;, `.
-  */
   if (!serviceName.trim()) return false;
   if (serviceName.length > 180) return false;
 
@@ -62,38 +59,89 @@ function validateServiceName(serviceName: string): boolean {
 }
 
 function validateAction(action: string): action is ServiceAction {
-  return action === 'start' || action === 'stop' || action === 'restart';
+  return (
+    action === 'start' ||
+    action === 'stop' ||
+    action === 'restart' ||
+    action === 'set_startup'
+  );
 }
 
-function buildServiceCommand(action: ServiceAction, serviceName: string): string {
-  const escapedServiceName = serviceName.replace(/"/g, '\\"');
+function validateStartupType(value: string): value is StartupType {
+  return (
+    value === 'automatic' ||
+    value === 'delayed' ||
+    value === 'manual' ||
+    value === 'disabled'
+  );
+}
 
-  if (action === 'start') {
+function getStartupScValue(startupType: StartupType): string {
+  if (startupType === 'automatic') return 'auto';
+  if (startupType === 'delayed') return 'delayed-auto';
+  if (startupType === 'manual') return 'demand';
+
+  return 'disabled';
+}
+
+function getStartupLabel(startupType: StartupType): string {
+  if (startupType === 'automatic') return 'Automático';
+  if (startupType === 'delayed') return 'Automático com atraso';
+  if (startupType === 'manual') return 'Manual';
+
+  return 'Desabilitado';
+}
+
+function buildServiceCommand(input: {
+  action: ServiceAction;
+  serviceName: string;
+  startupType?: StartupType | null;
+}): string {
+  const escapedServiceName = input.serviceName.replace(/"/g, '\\"');
+
+  if (input.action === 'start') {
     return `sc.exe start "${escapedServiceName}"`;
   }
 
-  if (action === 'stop') {
+  if (input.action === 'stop') {
     return `sc.exe stop "${escapedServiceName}"`;
   }
 
-  return [
-    `sc.exe stop "${escapedServiceName}"`,
-    'timeout /t 3 /nobreak > nul',
-    `sc.exe start "${escapedServiceName}"`,
-  ].join(' && ');
+  if (input.action === 'restart') {
+    return [
+      `sc.exe stop "${escapedServiceName}"`,
+      'timeout /t 3 /nobreak > nul',
+      `sc.exe start "${escapedServiceName}"`,
+    ].join(' && ');
+  }
+
+  if (!input.startupType) {
+    throw new Error('Tipo de inicialização não informado.');
+  }
+
+  const scStartupValue = getStartupScValue(input.startupType);
+
+  return `sc.exe config "${escapedServiceName}" start= ${scStartupValue}`;
 }
 
-function getActionLabel(action: ServiceAction): string {
+function getActionLabel(action: ServiceAction, startupType?: StartupType | null): string {
   if (action === 'start') return 'Iniciar serviço';
   if (action === 'stop') return 'Parar serviço';
+  if (action === 'restart') return 'Reiniciar serviço';
 
-  return 'Reiniciar serviço';
+  return startupType
+    ? `Alterar inicialização para ${getStartupLabel(startupType)}`
+    : 'Alterar tipo de inicialização';
 }
 
-function classifyServiceActionOutput(output: string): 'success' | 'warning' | 'failed' {
+function classifyServiceActionOutput(
+  output: string,
+): 'success' | 'warning' | 'failed' {
   const normalized = output.toLowerCase();
 
   if (
+    normalized.includes('changeserviceconfig success') ||
+    normalized.includes('change service config success') ||
     normalized.includes('start_pending') ||
     normalized.includes('stop_pending') ||
     normalized.includes('running') ||
@@ -118,7 +166,8 @@ function classifyServiceActionOutput(output: string): 'success' | 'warning' | 'f
     normalized.includes('access is denied') ||
     normalized.includes('does not exist') ||
     normalized.includes('error') ||
-    normalized.includes('cannot')
+    normalized.includes('cannot') ||
+    normalized.includes('invalid')
   ) {
     return 'failed';
   }
@@ -273,6 +322,7 @@ async function auditServiceAction(input: {
   hostname: string;
   serviceName: string;
   action: ServiceAction;
+  startupType?: StartupType | null;
   actionStatus: 'success' | 'warning' | 'failed';
   output: string;
 }) {
@@ -290,11 +340,12 @@ async function auditServiceAction(input: {
       requested_by_email: input.userEmail,
       requested_by_role: input.userRole,
       command_key: `service_${input.action}`,
-      command_label: getActionLabel(input.action),
+      command_label: getActionLabel(input.action, input.startupType),
       parameters: {
         hostname: input.hostname,
         service_name: input.serviceName,
         action: input.action,
+        startup_type: input.startupType ?? null,
       },
       result: {
         status: input.actionStatus,
@@ -319,11 +370,15 @@ async function auditServiceAction(input: {
     .insert({
       job_id: jobId,
       level: input.actionStatus === 'failed' ? 'error' : 'info',
-      message: `${getActionLabel(input.action)} executado pelo SafeOps Manager.`,
+      message: `${getActionLabel(
+        input.action,
+        input.startupType,
+      )} executado pelo SafeOps Manager.`,
       payload: {
         hostname: input.hostname,
         service_name: input.serviceName,
         action: input.action,
+        startup_type: input.startupType ?? null,
         action_status: input.actionStatus,
         requested_by_email: input.userEmail,
         requested_by_role: input.userRole,
@@ -389,6 +444,7 @@ export async function POST(
 
     const serviceName = cleanString(body.serviceName);
     const action = cleanString(body.action);
+    const startupType = cleanString(body.startupType);
 
     if (!serviceName || !validateServiceName(serviceName)) {
       return NextResponse.json(
@@ -408,6 +464,22 @@ export async function POST(
         },
         { status: 400 },
       );
+    }
+
+    let validatedStartupType: StartupType | null = null;
+
+    if (action === 'set_startup') {
+      if (!startupType || !validateStartupType(startupType)) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: 'Tipo de inicialização inválido.',
+          },
+          { status: 400 },
+        );
+      }
+
+      validatedStartupType = startupType;
     }
 
     const device = await getDeviceForOperation({
@@ -438,7 +510,11 @@ export async function POST(
       );
     }
 
-    const command = buildServiceCommand(action, serviceName);
+    const command = buildServiceCommand({
+      action,
+      serviceName,
+      startupType: validatedStartupType,
+    });
 
     const result = await runOperationalCommand({
       agentId,
@@ -457,6 +533,7 @@ export async function POST(
       hostname: device.hostname,
       serviceName,
       action,
+      startupType: validatedStartupType,
       actionStatus,
       output: result.output,
     });
@@ -466,6 +543,7 @@ export async function POST(
       status: actionStatus,
       action,
       serviceName,
+      startupType: validatedStartupType,
       message:
         actionStatus === 'success'
           ? 'Operação executada com sucesso.'
