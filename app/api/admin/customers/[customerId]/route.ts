@@ -19,7 +19,6 @@ type UpdateCustomerPayload = {
   windowsAgentUrl?: string;
   linuxAgentUrl?: string;
   macosAgentUrl?: string;
-  isActive?: boolean;
 };
 
 type AccessRow = {
@@ -163,7 +162,6 @@ export async function PATCH(
         trmm_linux_agent_url: cleanString(payload.linuxAgentUrl),
         trmm_macos_agent_url: cleanString(payload.macosAgentUrl),
         notes: cleanString(payload.notes),
-        is_active: payload.isActive !== false,
       })
       .eq('id', customerId);
 

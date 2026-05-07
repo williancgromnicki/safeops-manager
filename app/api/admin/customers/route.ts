@@ -31,9 +31,7 @@ type CustomerRow = {
   trmm_linux_agent_url: string | null;
   trmm_macos_agent_url: string | null;
   notes: string | null;
-  is_active: boolean;
   created_at: string;
-  updated_at: string;
 };
 
 type SiteRow = {
@@ -43,9 +41,9 @@ type SiteRow = {
   slug: string;
   tactical_site_id: string | null;
   notes: string | null;
-  is_active: boolean;
+  is_active: boolean | null;
   created_at: string;
-  updated_at: string;
+  updated_at: string | null;
 };
 
 function cleanString(value?: string | null): string | null {
@@ -154,9 +152,7 @@ export async function GET() {
           'trmm_linux_agent_url',
           'trmm_macos_agent_url',
           'notes',
-          'is_active',
           'created_at',
-          'updated_at',
         ].join(', '),
       )
       .order('name', { ascending: true });
@@ -200,7 +196,10 @@ export async function GET() {
 
     for (const site of sites) {
       const current = sitesByCustomerId.get(site.customer_id) ?? [];
-      current.push(site);
+      current.push({
+        ...site,
+        is_active: site.is_active !== false,
+      });
       sitesByCustomerId.set(site.customer_id, current);
     }
 
@@ -208,6 +207,8 @@ export async function GET() {
       ok: true,
       customers: customers.map((customer) => ({
         ...customer,
+        is_active: true,
+        updated_at: customer.created_at,
         sites: sitesByCustomerId.get(customer.id) ?? [],
       })),
     });
@@ -295,7 +296,6 @@ export async function POST(request: NextRequest) {
         trmm_linux_agent_url: linuxAgentUrl,
         trmm_macos_agent_url: macosAgentUrl,
         notes,
-        is_active: true,
       })
       .select('id, name, slug')
       .single();
