@@ -19,6 +19,18 @@ type DeviceRemoteRow = {
   tactical_agent_id: string | null;
 };
 
+type MeshCentralResponse = {
+  hostname?: string;
+  control?: string;
+  terminal?: string;
+  file?: string;
+  status?: string;
+  client?: string;
+  site?: string;
+  detail?: string;
+  error?: string;
+};
+
 const allowedOperationalRoles = new Set(['admin', 'client']);
 
 function cleanString(value?: string | null): string | null {
@@ -27,17 +39,24 @@ function cleanString(value?: string | null): string | null {
   return cleaned ? cleaned : null;
 }
 
-function getTrmmBaseUrl(): string {
-  return (
-    process.env.SAFEOPS_TRMM_BASE_URL?.trim() ??
-    'https://safeops.safesys.net.br'
-  ).replace(/\/+$/, '');
+function getTrmmApiUrl(): string {
+  const apiUrl = process.env.TRMM_API_URL?.trim();
+
+  if (!apiUrl) {
+    throw new Error('TRMM_API_URL não configurada.');
+  }
+
+  return apiUrl.replace(/\/+$/, '');
 }
 
-function buildTakeControlUrl(tacticalAgentId: string): string {
-  const baseUrl = getTrmmBaseUrl();
+function getTrmmApiKey(): string {
+  const apiKey = process.env.TRMM_API_KEY?.trim();
 
-  return `${baseUrl}/takecontrol/${encodeURIComponent(tacticalAgentId)}`;
+  if (!apiKey) {
+    throw new Error('TRMM_API_KEY não configurada.');
+  }
+
+  return apiKey;
 }
 
 async function getAuthenticatedUser() {
@@ -108,6 +127,58 @@ async function getRoleForCustomer(input: {
   return null;
 }
 
+async function getMeshCentralControlUrl(tacticalAgentId: string) {
+  const trmmApiUrl = getTrmmApiUrl();
+  const trmmApiKey = getTrmmApiKey();
+
+  const response = await fetch(
+    `${trmmApiUrl}/agents/${encodeURIComponent(tacticalAgentId)}/meshcentral/`,
+    {
+      method: 'GET',
+      headers: {
+        'X-API-KEY': trmmApiKey,
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store',
+    },
+  );
+
+  const contentType = response.headers.get('content-type') ?? '';
+  const text = await response.text();
+
+  let data: MeshCentralResponse | null = null;
+
+  if (contentType.includes('application/json')) {
+    try {
+      data = JSON.parse(text) as MeshCentralResponse;
+    } catch {
+      data = null;
+    }
+  }
+
+  if (!response.ok) {
+    const message =
+      data?.detail ||
+      data?.error ||
+      `TRMM retornou erro ${response.status} ao gerar sessão MeshCentral.`;
+
+    throw new Error(message);
+  }
+
+  const controlUrl = cleanString(data?.control);
+
+  if (!controlUrl) {
+    throw new Error(
+      'TRMM não retornou URL de controle remoto para este dispositivo.',
+    );
+  }
+
+  return {
+    url: controlUrl,
+    mesh: data,
+  };
+}
+
 async function auditTakeControl(input: {
   customerId: string;
   deviceId: string;
@@ -115,6 +186,7 @@ async function auditTakeControl(input: {
   userEmail: string | null;
   userRole: string;
   hostname: string;
+  meshStatus?: string | null;
 }) {
   const supabaseAdmin = getSupabaseAdmin();
 
@@ -134,6 +206,8 @@ async function auditTakeControl(input: {
       command_label: 'Abrir Take Control',
       parameters: {
         hostname: input.hostname,
+        mesh_status: input.meshStatus ?? null,
+        source: 'meshcentral_api',
       },
       result: {
         opened: true,
@@ -157,11 +231,14 @@ async function auditTakeControl(input: {
     .insert({
       job_id: jobId,
       level: 'info',
-      message: 'Sessão Take Control aberta a partir do SafeOps Manager.',
+      message:
+        'Sessão Take Control aberta a partir do SafeOps Manager usando URL temporária do MeshCentral.',
       payload: {
         hostname: input.hostname,
         requested_by_email: input.userEmail,
         requested_by_role: input.userRole,
+        mesh_status: input.meshStatus ?? null,
+        source: 'meshcentral_api',
       },
     });
 
@@ -221,14 +298,7 @@ export async function POST(request: NextRequest, context: RemoteRouteContext) {
 
     const { data, error } = await supabase
       .from('devices')
-      .select(
-        [
-          'id',
-          'customer_id',
-          'hostname',
-          'tactical_agent_id',
-        ].join(', '),
-      )
+      .select(['id', 'customer_id', 'hostname', 'tactical_agent_id'].join(', '))
       .eq('id', deviceId)
       .eq('customer_id', activeCustomer.customerId)
       .eq('visible_to_customer', true)
@@ -267,7 +337,7 @@ export async function POST(request: NextRequest, context: RemoteRouteContext) {
       );
     }
 
-    const url = buildTakeControlUrl(tacticalAgentId);
+    const meshCentral = await getMeshCentralControlUrl(tacticalAgentId);
 
     await auditTakeControl({
       customerId: activeCustomer.customerId,
@@ -276,15 +346,22 @@ export async function POST(request: NextRequest, context: RemoteRouteContext) {
       userEmail: user.email ?? null,
       userRole,
       hostname: data.hostname,
+      meshStatus: cleanString(meshCentral.mesh?.status),
     });
 
     return NextResponse.json({
       ok: true,
-      url,
+      url: meshCentral.url,
       device: {
         id: data.id,
         hostname: data.hostname,
         customerId: activeCustomer.customerId,
+      },
+      mesh: {
+        hostname: meshCentral.mesh?.hostname ?? data.hostname,
+        status: meshCentral.mesh?.status ?? null,
+        client: meshCentral.mesh?.client ?? null,
+        site: meshCentral.mesh?.site ?? null,
       },
     });
   } catch (error) {
