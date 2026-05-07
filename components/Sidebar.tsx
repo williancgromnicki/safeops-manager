@@ -39,8 +39,8 @@ const OPERATIONS_NAV_ITEMS: NavItem[] = [
   {
     href: '/admin/remote-jobs',
     label: 'Jobs remotos',
-    preserveCustomer: false,
-    roles: ['admin'],
+    preserveCustomer: true,
+    roles: ['admin', 'client'],
   },
   {
     href: '/operations/software-install',
