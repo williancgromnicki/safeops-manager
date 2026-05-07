@@ -20,6 +20,18 @@ type DeviceRemoteBackgroundRow = {
   operating_system: string | null;
 };
 
+type MeshCentralResponse = {
+  hostname?: string;
+  control?: string;
+  terminal?: string;
+  file?: string;
+  status?: string;
+  client?: string;
+  site?: string;
+  detail?: string;
+  error?: string;
+};
+
 const allowedOperationalRoles = new Set(['admin', 'client']);
 
 function cleanString(value?: string | null): string | null {
@@ -28,45 +40,24 @@ function cleanString(value?: string | null): string | null {
   return cleaned ? cleaned : null;
 }
 
-function getTrmmBaseUrl(): string {
-  return (
-    process.env.SAFEOPS_TRMM_BASE_URL?.trim() ??
-    'https://safeops.safesys.net.br'
-  ).replace(/\/+$/, '');
+function getTrmmApiUrl(): string {
+  const apiUrl = process.env.TRMM_API_URL?.trim();
+
+  if (!apiUrl) {
+    throw new Error('TRMM_API_URL não configurada.');
+  }
+
+  return apiUrl.replace(/\/+$/, '');
 }
 
-function detectAgentPlatform(operatingSystem?: string | null): string {
-  const normalized = operatingSystem?.toLowerCase() ?? '';
+function getTrmmApiKey(): string {
+  const apiKey = process.env.TRMM_API_KEY?.trim();
 
-  if (normalized.includes('windows')) {
-    return 'windows';
+  if (!apiKey) {
+    throw new Error('TRMM_API_KEY não configurada.');
   }
 
-  if (normalized.includes('linux')) {
-    return 'linux';
-  }
-
-  if (
-    normalized.includes('mac') ||
-    normalized.includes('darwin') ||
-    normalized.includes('os x')
-  ) {
-    return 'darwin';
-  }
-
-  return 'windows';
-}
-
-function buildRemoteBackgroundUrl(input: {
-  tacticalAgentId: string;
-  operatingSystem: string | null;
-}): string {
-  const baseUrl = getTrmmBaseUrl();
-  const platform = detectAgentPlatform(input.operatingSystem);
-
-  return `${baseUrl}/remotebackground/${encodeURIComponent(
-    input.tacticalAgentId,
-  )}?agentPlatform=${encodeURIComponent(platform)}`;
+  return apiKey;
 }
 
 async function getAuthenticatedUser() {
@@ -137,6 +128,58 @@ async function getRoleForCustomer(input: {
   return null;
 }
 
+async function getMeshCentralTerminalUrl(tacticalAgentId: string) {
+  const trmmApiUrl = getTrmmApiUrl();
+  const trmmApiKey = getTrmmApiKey();
+
+  const response = await fetch(
+    `${trmmApiUrl}/agents/${encodeURIComponent(tacticalAgentId)}/meshcentral/`,
+    {
+      method: 'GET',
+      headers: {
+        'X-API-KEY': trmmApiKey,
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store',
+    },
+  );
+
+  const contentType = response.headers.get('content-type') ?? '';
+  const text = await response.text();
+
+  let data: MeshCentralResponse | null = null;
+
+  if (contentType.includes('application/json')) {
+    try {
+      data = JSON.parse(text) as MeshCentralResponse;
+    } catch {
+      data = null;
+    }
+  }
+
+  if (!response.ok) {
+    const message =
+      data?.detail ||
+      data?.error ||
+      `TRMM retornou erro ${response.status} ao gerar sessão MeshCentral.`;
+
+    throw new Error(message);
+  }
+
+  const terminalUrl = cleanString(data?.terminal);
+
+  if (!terminalUrl) {
+    throw new Error(
+      'TRMM não retornou URL de Remote Background para este dispositivo.',
+    );
+  }
+
+  return {
+    url: terminalUrl,
+    mesh: data,
+  };
+}
+
 async function auditRemoteBackground(input: {
   customerId: string;
   deviceId: string;
@@ -144,8 +187,11 @@ async function auditRemoteBackground(input: {
   userEmail: string | null;
   userRole: string;
   hostname: string;
+  meshStatus?: string | null;
 }) {
   const supabaseAdmin = getSupabaseAdmin();
+
+  const now = new Date().toISOString();
 
   const { data: createdJob, error: jobError } = await supabaseAdmin
     .from('remote_jobs')
@@ -161,13 +207,16 @@ async function auditRemoteBackground(input: {
       command_label: 'Abrir Remote Background',
       parameters: {
         hostname: input.hostname,
+        mesh_status: input.meshStatus ?? null,
+        source: 'meshcentral_api',
+        viewmode: 12,
       },
       result: {
         opened: true,
       },
       approval_required: false,
-      started_at: new Date().toISOString(),
-      finished_at: new Date().toISOString(),
+      started_at: now,
+      finished_at: now,
     })
     .select('id')
     .single();
@@ -184,11 +233,15 @@ async function auditRemoteBackground(input: {
     .insert({
       job_id: jobId,
       level: 'info',
-      message: 'Sessão Remote Background aberta a partir do SafeOps Manager.',
+      message:
+        'Sessão Remote Background aberta a partir do SafeOps Manager usando URL temporária do MeshCentral.',
       payload: {
         hostname: input.hostname,
         requested_by_email: input.userEmail,
         requested_by_role: input.userRole,
+        mesh_status: input.meshStatus ?? null,
+        source: 'meshcentral_api',
+        viewmode: 12,
       },
     });
 
@@ -230,6 +283,7 @@ export async function POST(
     }
 
     const activeCustomer = customerContext.activeCustomer;
+
     const userRole = await getRoleForCustomer({
       userId: user.id,
       customerId: activeCustomer.customerId,
@@ -297,10 +351,7 @@ export async function POST(
       );
     }
 
-    const url = buildRemoteBackgroundUrl({
-      tacticalAgentId,
-      operatingSystem: data.operating_system,
-    });
+    const meshCentral = await getMeshCentralTerminalUrl(tacticalAgentId);
 
     await auditRemoteBackground({
       customerId: activeCustomer.customerId,
@@ -309,15 +360,25 @@ export async function POST(
       userEmail: user.email ?? null,
       userRole,
       hostname: data.hostname,
+      meshStatus: cleanString(meshCentral.mesh?.status),
     });
 
     return NextResponse.json({
       ok: true,
-      url,
+      url: meshCentral.url,
       device: {
         id: data.id,
         hostname: data.hostname,
         customerId: activeCustomer.customerId,
+        operatingSystem: data.operating_system,
+      },
+      mesh: {
+        hostname: meshCentral.mesh?.hostname ?? data.hostname,
+        status: meshCentral.mesh?.status ?? null,
+        client: meshCentral.mesh?.client ?? null,
+        site: meshCentral.mesh?.site ?? null,
+        mode: 'terminal',
+        viewmode: 12,
       },
     });
   } catch (error) {
