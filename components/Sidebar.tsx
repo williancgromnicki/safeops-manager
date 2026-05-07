@@ -24,6 +24,7 @@ type NavItem = {
   label: string;
   preserveCustomer: boolean;
   disabled?: boolean;
+  roles?: string[];
 };
 
 const PUBLIC_PATHS = ['/login'];
@@ -39,24 +40,28 @@ const OPERATIONS_NAV_ITEMS: NavItem[] = [
     href: '/admin/remote-jobs',
     label: 'Jobs remotos',
     preserveCustomer: false,
+    roles: ['admin'],
   },
   {
     href: '/operations/software-install',
     label: 'Instalar software',
     preserveCustomer: true,
     disabled: true,
+    roles: ['admin', 'client'],
   },
   {
     href: '/operations/actions',
     label: 'Ações administrativas',
     preserveCustomer: true,
     disabled: true,
+    roles: ['admin'],
   },
   {
     href: '/operations/history',
     label: 'Histórico',
     preserveCustomer: true,
     disabled: true,
+    roles: ['admin', 'client'],
   },
 ];
 
@@ -65,27 +70,32 @@ const ADMIN_NAV_ITEMS: NavItem[] = [
     href: '/admin',
     label: 'Painel administrativo',
     preserveCustomer: false,
+    roles: ['admin'],
   },
   {
     href: '/admin/customers',
     label: 'Clientes e sites',
     preserveCustomer: false,
+    roles: ['admin'],
   },
   {
     href: '/admin/users',
     label: 'Usuários e permissões',
     preserveCustomer: true,
+    roles: ['admin', 'client'],
   },
   {
     href: '/admin/agent-installers',
     label: 'Instaladores de agentes',
     preserveCustomer: true,
+    roles: ['admin', 'client'],
   },
   {
     href: '/admin/alert-contacts',
     label: 'Contatos de alerta',
     preserveCustomer: false,
     disabled: true,
+    roles: ['admin'],
   },
 ];
 
@@ -105,12 +115,28 @@ function normalizeRole(role?: string | null): string {
   return role?.trim().toLowerCase() ?? '';
 }
 
-function hasRole(customers: AllowedCustomer[], roles: string[]): boolean {
-  const allowedRoles = new Set(roles);
+function getHighestRole(customers: AllowedCustomer[]): string {
+  if (customers.some((customer) => normalizeRole(customer.role) === 'admin')) {
+    return 'admin';
+  }
 
-  return customers.some((customer) =>
-    allowedRoles.has(normalizeRole(customer.role)),
-  );
+  if (customers.some((customer) => normalizeRole(customer.role) === 'client')) {
+    return 'client';
+  }
+
+  if (customers.some((customer) => normalizeRole(customer.role) === 'viewer')) {
+    return 'viewer';
+  }
+
+  return '';
+}
+
+function isItemAllowed(item: NavItem, currentRole: string): boolean {
+  if (!item.roles || item.roles.length === 0) {
+    return true;
+  }
+
+  return item.roles.includes(currentRole);
 }
 
 function ChevronIcon({ open }: { open: boolean }) {
@@ -297,8 +323,25 @@ export function Sidebar() {
     return customers[0]?.customerId ?? null;
   }, [customerIdFromUrl, customers]);
 
-  const canUseOperations = hasRole(customers, ['admin', 'client']);
-  const canUseAdministration = hasRole(customers, ['admin', 'client']);
+  const activeCustomerRole = useMemo(() => {
+    if (!activeCustomerId) {
+      return getHighestRole(customers);
+    }
+
+    const activeCustomer = customers.find(
+      (customer) => customer.customerId === activeCustomerId,
+    );
+
+    return normalizeRole(activeCustomer?.role) || getHighestRole(customers);
+  }, [activeCustomerId, customers]);
+
+  const visibleOperationsItems = OPERATIONS_NAV_ITEMS.filter((item) =>
+    isItemAllowed(item, activeCustomerRole),
+  );
+
+  const visibleAdminItems = ADMIN_NAV_ITEMS.filter((item) =>
+    isItemAllowed(item, activeCustomerRole),
+  );
 
   const handleCustomerChange = (customerId: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -367,13 +410,13 @@ export function Sidebar() {
             </li>
           ))}
 
-          {canUseOperations ? (
+          {visibleOperationsItems.length > 0 ? (
             <NavGroup
               label="Operações"
               open={operationsOpen}
               onToggle={() => setOperationsOpen((current) => !current)}
             >
-              {OPERATIONS_NAV_ITEMS.map((item) => (
+              {visibleOperationsItems.map((item) => (
                 <li key={item.href}>
                   <NavLink
                     item={item}
@@ -386,13 +429,13 @@ export function Sidebar() {
             </NavGroup>
           ) : null}
 
-          {canUseAdministration ? (
+          {visibleAdminItems.length > 0 ? (
             <NavGroup
               label="Administração"
               open={adminOpen}
               onToggle={() => setAdminOpen((current) => !current)}
             >
-              {ADMIN_NAV_ITEMS.map((item) => (
+              {visibleAdminItems.map((item) => (
                 <li key={item.href}>
                   <NavLink
                     item={item}
