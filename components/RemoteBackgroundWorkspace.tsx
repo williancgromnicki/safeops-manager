@@ -282,6 +282,86 @@ function PlaceholderPanel({
   );
 }
 
+
+function FileBrowserPanel({
+  fileUrl,
+  isLoading,
+  message,
+  deviceName,
+  onRefresh,
+}: {
+  fileUrl: string | null;
+  isLoading: boolean;
+  message: string | null;
+  deviceName: string;
+  onRefresh: () => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">
+            Navegador de arquivos
+          </h3>
+
+          <p className="mt-1 text-xs text-slate-600">
+            Acesse diretórios e arquivos do dispositivo em sessão controlada.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={isLoading}
+          className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isLoading ? 'Renovando...' : 'Renovar sessão'}
+        </button>
+      </div>
+
+      {message ? (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          {message}
+        </div>
+      ) : null}
+
+      <div className="overflow-hidden rounded-2xl border border-slate-300 bg-slate-950">
+        {isLoading ? (
+          <div className="flex min-h-[720px] items-center justify-center p-8 text-center">
+            <div>
+              <p className="text-sm font-semibold text-white">
+                Abrindo navegador de arquivos...
+              </p>
+              <p className="mt-2 text-xs text-slate-300">
+                Aguarde enquanto a sessão segura é preparada.
+              </p>
+            </div>
+          </div>
+        ) : fileUrl ? (
+          <iframe
+            title={`Navegador de arquivos - ${deviceName}`}
+            src={fileUrl}
+            className="h-[720px] w-full bg-white"
+            allow="clipboard-read; clipboard-write; fullscreen"
+          />
+        ) : (
+          <div className="flex min-h-[720px] items-center justify-center p-8 text-center">
+            <div>
+              <p className="text-sm font-semibold text-white">
+                Sessão não iniciada
+              </p>
+              <p className="mt-2 text-xs text-slate-300">
+                Clique em “Renovar sessão” para tentar novamente.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
 function ServiceDetailsModal({
   service,
   isSavingStartup,
@@ -1315,6 +1395,13 @@ export function RemoteBackgroundWorkspace({
   const [isLoadingTerminal, setIsLoadingTerminal] = useState(false);
   const [terminalMessage, setTerminalMessage] = useState<string | null>(null);
 
+  const [fileBrowserUrl, setFileBrowserUrl] = useState<string | null>(null);
+  const [isLoadingFileBrowser, setIsLoadingFileBrowser] = useState(false);
+  const [fileBrowserMessage, setFileBrowserMessage] = useState<string | null>(
+    null,
+  );
+  const [hasLoadedFileBrowser, setHasLoadedFileBrowser] = useState(false);
+
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [isLoadingServices, setIsLoadingServices] = useState(false);
   const [servicesMessage, setServicesMessage] = useState<string | null>(null);
@@ -1386,6 +1473,44 @@ export function RemoteBackgroundWorkspace({
       );
     } finally {
       setIsLoadingTerminal(false);
+    }
+  }, [customerId, deviceId]);
+
+  const loadFileBrowserSession = useCallback(async () => {
+    try {
+      setIsLoadingFileBrowser(true);
+      setFileBrowserMessage(null);
+
+      const response = await fetch(
+        `/api/devices/${encodeURIComponent(
+          deviceId,
+        )}/remote-background/files/session?customerId=${encodeURIComponent(
+          customerId,
+        )}`,
+        {
+          method: 'POST',
+          cache: 'no-store',
+        },
+      );
+
+      const data = (await response.json()) as RemoteBackgroundResponse;
+
+      if (!response.ok || !data.ok || !data.url) {
+        throw new Error(
+          data.error ?? 'Não foi possível abrir o navegador de arquivos.',
+        );
+      }
+
+      setFileBrowserUrl(data.url);
+      setHasLoadedFileBrowser(true);
+    } catch (error) {
+      setFileBrowserMessage(
+        error instanceof Error
+          ? error.message
+          : 'Erro ao abrir navegador de arquivos.',
+      );
+    } finally {
+      setIsLoadingFileBrowser(false);
     }
   }, [customerId, deviceId]);
 
@@ -1598,6 +1723,12 @@ export function RemoteBackgroundWorkspace({
   }, [loadTerminalSession]);
 
   useEffect(() => {
+    if (activeTab === 'files' && !hasLoadedFileBrowser) {
+      void loadFileBrowserSession();
+    }
+  }, [activeTab, hasLoadedFileBrowser, loadFileBrowserSession]);
+
+  useEffect(() => {
     if (activeTab === 'services' && !hasLoadedServices) {
       void loadServices();
     }
@@ -1737,9 +1868,12 @@ export function RemoteBackgroundWorkspace({
           ) : null}
 
           {activeTab === 'files' ? (
-            <PlaceholderPanel
-              title="File Browser"
-              description="Próxima fase: listar diretórios e arquivos com controle de permissão, trilha de auditoria e ações seguras."
+            <FileBrowserPanel
+              fileUrl={fileBrowserUrl}
+              isLoading={isLoadingFileBrowser}
+              message={fileBrowserMessage}
+              deviceName={deviceName}
+              onRefresh={loadFileBrowserSession}
             />
           ) : null}
 
