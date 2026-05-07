@@ -1,6 +1,4 @@
-from pathlib import Path
-
-content = r"""'use client';
+'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -1760,9 +1758,3 @@ export function RemoteBackgroundWorkspace({
     </div>
   );
 }
-"""
-
-path = Path("/mnt/data/RemoteBackgroundWorkspace.tsx")
-path.write_text(content, encoding="utf-8")
-print(f"Arquivo gerado: {path}")
-print(f"Tamanho: {path.stat().st_size} bytes")
