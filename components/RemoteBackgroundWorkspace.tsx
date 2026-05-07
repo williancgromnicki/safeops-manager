@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 type RemoteBackgroundWorkspaceProps = {
   deviceId: string;
@@ -373,8 +373,6 @@ function ServiceActionConfirmModal({
 }
 
 function ServicesPanel({
-  deviceId,
-  customerId,
   services,
   isLoading,
   message,
@@ -384,8 +382,6 @@ function ServicesPanel({
   onRefresh,
   onRunAction,
 }: {
-  deviceId: string;
-  customerId: string;
   services: ServiceItem[];
   isLoading: boolean;
   message: string | null;
@@ -396,9 +392,9 @@ function ServicesPanel({
   onRunAction: (service: ServiceItem, action: ServiceAction) => Promise<void>;
 }) {
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'running' | 'stopped'>(
-    'all',
-  );
+  const [statusFilter, setStatusFilter] = useState<
+    'all' | 'running' | 'stopped'
+  >('all');
   const [selectedService, setSelectedService] = useState<ServiceItem | null>(
     null,
   );
@@ -467,7 +463,9 @@ function ServicesPanel({
           <select
             value={statusFilter}
             onChange={(event) =>
-              setStatusFilter(event.target.value as 'all' | 'running' | 'stopped')
+              setStatusFilter(
+                event.target.value as 'all' | 'running' | 'stopped',
+              )
             }
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
           >
@@ -543,7 +541,10 @@ function ServicesPanel({
             <tbody className="divide-y divide-slate-100 bg-white">
               {isLoading && services.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                  <td
+                    colSpan={6}
+                    className="px-4 py-8 text-center text-slate-500"
+                  >
                     Carregando serviços...
                   </td>
                 </tr>
@@ -551,7 +552,10 @@ function ServicesPanel({
 
               {!isLoading && filteredServices.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                  <td
+                    colSpan={6}
+                    className="px-4 py-8 text-center text-slate-500"
+                  >
                     Nenhum serviço encontrado com os filtros atuais.
                   </td>
                 </tr>
@@ -559,10 +563,13 @@ function ServicesPanel({
 
               {filteredServices.map((service) => {
                 const normalizedStatus = service.status.toLowerCase();
-                const actionKey = `${service.name}`;
+                const actionKey = service.name;
 
                 return (
-                  <tr key={`${service.name}-${service.pid}`} className="align-top">
+                  <tr
+                    key={`${service.name}-${service.pid}`}
+                    className="align-top"
+                  >
                     <td className="max-w-xl px-4 py-3">
                       <p className="font-semibold text-slate-900">
                         {service.displayName}
@@ -724,7 +731,7 @@ export function RemoteBackgroundWorkspace({
     [activeTab],
   );
 
-  async function loadTerminalSession() {
+  const loadTerminalSession = useCallback(async () => {
     try {
       setIsLoadingTerminal(true);
       setTerminalMessage(null);
@@ -758,9 +765,9 @@ export function RemoteBackgroundWorkspace({
     } finally {
       setIsLoadingTerminal(false);
     }
-  }
+  }, [customerId, deviceId]);
 
-  async function loadServices() {
+  const loadServices = useCallback(async () => {
     try {
       setIsLoadingServices(true);
       setServicesMessage(null);
@@ -796,68 +803,71 @@ export function RemoteBackgroundWorkspace({
     } finally {
       setIsLoadingServices(false);
     }
-  }
+  }, [customerId, deviceId]);
 
-  async function runServiceAction(service: ServiceItem, action: ServiceAction) {
-    try {
-      setActiveServiceAction(service.name);
-      setServiceActionMessage(null);
-      setServiceActionMessageType(null);
+  const runServiceAction = useCallback(
+    async (service: ServiceItem, action: ServiceAction) => {
+      try {
+        setActiveServiceAction(service.name);
+        setServiceActionMessage(null);
+        setServiceActionMessageType(null);
 
-      const response = await fetch(
-        `/api/devices/${encodeURIComponent(
-          deviceId,
-        )}/remote-background/services/action?customerId=${encodeURIComponent(
-          customerId,
-        )}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
+        const response = await fetch(
+          `/api/devices/${encodeURIComponent(
+            deviceId,
+          )}/remote-background/services/action?customerId=${encodeURIComponent(
+            customerId,
+          )}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            cache: 'no-store',
+            body: JSON.stringify({
+              serviceName: service.name,
+              action,
+            }),
           },
-          cache: 'no-store',
-          body: JSON.stringify({
-            serviceName: service.name,
-            action,
-          }),
-        },
-      );
-
-      const data = (await response.json()) as ServiceActionResponse;
-
-      if (!response.ok || !data.ok) {
-        throw new Error(
-          data.error ?? data.message ?? 'Não foi possível executar a ação.',
         );
+
+        const data = (await response.json()) as ServiceActionResponse;
+
+        if (!response.ok || !data.ok) {
+          throw new Error(
+            data.error ?? data.message ?? 'Não foi possível executar a ação.',
+          );
+        }
+
+        setServiceActionMessage(data.message ?? 'Operação executada.');
+        setServiceActionMessageType(
+          data.status === 'warning' ? 'warning' : 'success',
+        );
+
+        await loadServices();
+      } catch (error) {
+        setServiceActionMessage(
+          error instanceof Error
+            ? error.message
+            : 'Erro ao executar ação de serviço.',
+        );
+        setServiceActionMessageType('error');
+      } finally {
+        setActiveServiceAction(null);
       }
-
-      setServiceActionMessage(data.message ?? 'Operação executada.');
-      setServiceActionMessageType(
-        data.status === 'warning' ? 'warning' : 'success',
-      );
-
-      await loadServices();
-    } catch (error) {
-      setServiceActionMessage(
-        error instanceof Error
-          ? error.message
-          : 'Erro ao executar ação de serviço.',
-      );
-      setServiceActionMessageType('error');
-    } finally {
-      setActiveServiceAction(null);
-    }
-  }
+    },
+    [customerId, deviceId, loadServices],
+  );
 
   useEffect(() => {
     void loadTerminalSession();
-  }, [customerId, deviceId]);
+  }, [loadTerminalSession]);
 
   useEffect(() => {
     if (activeTab === 'services' && !hasLoadedServices) {
       void loadServices();
     }
-  }, [activeTab, hasLoadedServices]);
+  }, [activeTab, hasLoadedServices, loadServices]);
 
   return (
     <div className="space-y-5">
@@ -982,8 +992,6 @@ export function RemoteBackgroundWorkspace({
 
           {activeTab === 'services' ? (
             <ServicesPanel
-              deviceId={deviceId}
-              customerId={customerId}
               services={services}
               isLoading={isLoadingServices}
               message={servicesMessage}
