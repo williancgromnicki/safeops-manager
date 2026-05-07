@@ -24,6 +24,7 @@ type NavItem = {
   label: string;
   preserveCustomer: boolean;
   disabled?: boolean;
+  hidden?: boolean;
   roles?: string[];
 };
 
@@ -76,6 +77,7 @@ const ADMIN_NAV_ITEMS: NavItem[] = [
     href: '/admin/customers',
     label: 'Clientes e sites',
     preserveCustomer: true,
+    hidden: true,
     roles: ['admin'],
   },
   {
@@ -132,6 +134,10 @@ function getHighestRole(customers: AllowedCustomer[]): string {
 }
 
 function isItemAllowed(item: NavItem, currentRole: string): boolean {
+  if (item.hidden) {
+    return false;
+  }
+
   if (!item.roles || item.roles.length === 0) {
     return true;
   }
