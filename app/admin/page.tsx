@@ -1,12 +1,8 @@
 import { redirect } from 'next/navigation';
 
-import { AdminManagementPanel } from '@/components/AdminManagementPanel';
-import { AlertContactsPanel } from '@/components/AlertContactsPanel';
 import { DataTable } from '@/components/DataTable';
 import { EmptyState } from '@/components/EmptyState';
-import { DEMO_CUSTOMERS } from '@/lib/demo-data';
 import { listAllowedCustomersForAdminService } from '@/lib/services/admin';
-import { listAlertContactsService } from '@/lib/services/alert-contacts';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
@@ -15,232 +11,196 @@ type AdminCustomer = {
   id: string;
   name: string;
   slug: string;
-  trmmWindowsAgentUrl: string;
-  trmmLinuxAgentUrl: string;
-  trmmMacosAgentUrl: string;
-  notes: string;
+  isActive: boolean;
+  siteCount: number;
+  createdAt: string;
 };
 
 type CustomerRow = {
   id: string;
   name: string;
   slug: string | null;
-  trmm_windows_agent_url: string | null;
-  trmm_linux_agent_url: string | null;
-  trmm_macos_agent_url: string | null;
-  notes: string | null;
+  is_active: boolean | null;
+  created_at: string;
+};
+
+type SiteRow = {
+  id: string;
+  customer_id: string;
 };
 
 async function listAdminCustomers(): Promise<AdminCustomer[]> {
   const supabaseAdmin = getSupabaseAdmin();
 
-  const { data, error } = await supabaseAdmin
+  const { data: customersData, error: customersError } = await supabaseAdmin
     .from('customers')
-    .select(
-      [
-        'id',
-        'name',
-        'slug',
-        'trmm_windows_agent_url',
-        'trmm_linux_agent_url',
-        'trmm_macos_agent_url',
-        'notes',
-      ].join(', '),
-    )
+    .select(['id', 'name', 'slug', 'is_active', 'created_at'].join(', '))
     .order('name', { ascending: true });
 
-  if (error) {
-    throw new Error(`Erro ao listar clientes administrativos: ${error.message}`);
+  if (customersError) {
+    throw new Error(`Erro ao listar clientes: ${customersError.message}`);
   }
 
-  const rows = (data ?? []) as unknown as CustomerRow[];
+  const customers = (customersData ?? []) as unknown as CustomerRow[];
+  const customerIds = customers.map((customer) => customer.id);
 
-  return rows.map((customer) => ({
+  let sites: SiteRow[] = [];
+
+  if (customerIds.length > 0) {
+    const { data: sitesData, error: sitesError } = await supabaseAdmin
+      .from('sites')
+      .select('id, customer_id')
+      .in('customer_id', customerIds);
+
+    if (sitesError) {
+      throw new Error(`Erro ao listar sites: ${sitesError.message}`);
+    }
+
+    sites = (sitesData ?? []) as unknown as SiteRow[];
+  }
+
+  const siteCountByCustomerId = new Map<string, number>();
+
+  for (const site of sites) {
+    const currentCount = siteCountByCustomerId.get(site.customer_id) ?? 0;
+    siteCountByCustomerId.set(site.customer_id, currentCount + 1);
+  }
+
+  return customers.map((customer) => ({
     id: customer.id,
     name: customer.name,
     slug: customer.slug ?? '',
-    trmmWindowsAgentUrl: customer.trmm_windows_agent_url ?? '',
-    trmmLinuxAgentUrl: customer.trmm_linux_agent_url ?? '',
-    trmmMacosAgentUrl: customer.trmm_macos_agent_url ?? '',
-    notes: customer.notes ?? '',
+    isActive: customer.is_active !== false,
+    siteCount: siteCountByCustomerId.get(customer.id) ?? 0,
+    createdAt: customer.created_at,
   }));
 }
 
-export default async function AdminPage() {
-  let customers = [] as Awaited<
-    ReturnType<typeof listAllowedCustomersForAdminService>
-  >['customers'];
+function formatDate(value?: string | null): string {
+  if (!value) {
+    return '—';
+  }
 
-  let adminCustomers: AdminCustomer[] = [];
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleDateString('pt-BR');
+}
+
+export default async function AdminPage() {
   let isAdmin = false;
-  let alertContacts = [] as Awaited<ReturnType<typeof listAlertContactsService>>;
+  let customers: AdminCustomer[] = [];
   let errorMessage = '';
 
   try {
     const result = await listAllowedCustomersForAdminService();
 
-    customers = result.customers;
     isAdmin = result.isAdmin;
 
     if (isAdmin) {
-      const [contacts, allCustomers] = await Promise.all([
-        listAlertContactsService(),
-        listAdminCustomers(),
-      ]);
-
-      alertContacts = contacts;
-      adminCustomers = allCustomers;
+      customers = await listAdminCustomers();
     }
   } catch (error) {
     if (error instanceof Error && error.message.includes('Unauthorized')) {
       redirect('/login');
     }
 
-    console.error('Erro ao carregar dados administrativos:', error);
+    console.error('Erro ao carregar painel administrativo:', error);
 
-    customers = [];
-    adminCustomers = [];
     isAdmin = false;
-    alertContacts = [];
+    customers = [];
     errorMessage =
-      'Não foi possível carregar os dados administrativos neste momento.';
+      'Não foi possível carregar o painel administrativo neste momento.';
   }
 
-  const rows =
-    adminCustomers.length > 0
-      ? adminCustomers.map((customer) => ({
-          id: customer.id,
-          name: customer.name,
-          source: 'Banco de dados',
-          windowsUrl: customer.trmmWindowsAgentUrl,
-          linuxUrl: customer.trmmLinuxAgentUrl,
-          macosUrl: customer.trmmMacosAgentUrl,
-        }))
-      : customers.length > 0
-        ? customers.map((customer) => ({
-            id: customer.id,
-            name: customer.name,
-            source: 'Banco de dados',
-            windowsUrl: '',
-            linuxUrl: '',
-            macosUrl: '',
-          }))
-        : DEMO_CUSTOMERS.map((customer) => ({
-            id: customer.id,
-            name: customer.name,
-            source: 'Demo fallback',
-            windowsUrl: '',
-            linuxUrl: '',
-            macosUrl: '',
-          }));
+  if (!isAdmin) {
+    return (
+      <section className="space-y-6">
+        <div>
+          <h2 className="section-title">Painel administrativo</h2>
+          <p className="mt-2 text-sm text-slate-600">
+            Área interna da Safesys para gestão operacional do SafeOps Manager.
+          </p>
+        </div>
+
+        <EmptyState
+          title="Acesso não permitido"
+          description="Seu usuário não possui permissão para acessar esta área."
+        />
+      </section>
+    );
+  }
 
   return (
     <section className="space-y-6">
       <div>
-        <h2 className="section-title">Admin</h2>
+        <h2 className="section-title">Painel administrativo</h2>
         <p className="mt-2 text-sm text-slate-600">
-          Área interna da Safesys para gestão operacional do SafeOps Manager.
+          Visão geral dos clientes cadastrados no SafeOps Manager.
         </p>
       </div>
 
       {errorMessage ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
           {errorMessage}
         </div>
       ) : null}
 
-      {!isAdmin ? (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Você não tem permissão para acessar os recursos administrativos.
-        </p>
-      ) : null}
-
-      {isAdmin ? <AdminManagementPanel customers={adminCustomers} /> : null}
-
       <div className="rounded-2xl border border-surface-border bg-white p-5 shadow-sm">
-        <h3 className="section-title">Clientes cadastrados</h3>
-        <p className="mt-2 text-sm text-slate-600">
-          Lista de clientes conhecidos no SafeOps Manager e links de instalação disponíveis para implantação de agentes.
-        </p>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 className="section-title">Clientes cadastrados</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              Resumo dos clientes disponíveis para administração.
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            <span className="font-semibold text-slate-900">
+              {customers.length}
+            </span>{' '}
+            cliente{customers.length === 1 ? '' : 's'}
+          </div>
+        </div>
 
         <div className="mt-5">
-          {rows.length === 0 ? (
+          {customers.length === 0 ? (
             <EmptyState
-              title="Nenhum cliente disponível"
-              description="Adicione clientes para habilitar controles administrativos avançados."
+              title="Nenhum cliente cadastrado"
+              description="Os clientes sincronizados ou cadastrados aparecerão aqui."
             />
           ) : (
             <DataTable
-              columns={[
-                'Cliente',
-                'Origem',
-                'Windows',
-                'Linux',
-                'macOS',
-                'Referência',
-              ]}
+              columns={['Cliente', 'Slug', 'Sites', 'Status', 'Criado em']}
             >
-              {rows.map((row) => (
-                <tr key={row.id} className="text-slate-700">
-                  <td className="px-4 py-3 font-medium">{row.name}</td>
-                  <td className="px-4 py-3">{row.source}</td>
+              {customers.map((customer) => (
+                <tr key={customer.id} className="text-slate-700">
+                  <td className="px-4 py-3 font-medium text-slate-900">
+                    {customer.name}
+                  </td>
+                  <td className="px-4 py-3">{customer.slug || '—'}</td>
+                  <td className="px-4 py-3">{customer.siteCount}</td>
                   <td className="px-4 py-3">
-                    {row.windowsUrl ? (
-                      <a
-                        href={row.windowsUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="font-medium text-brand-700 hover:underline"
-                      >
-                        Baixar
-                      </a>
+                    {customer.isActive ? (
+                      <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-600/20">
+                        Ativo
+                      </span>
                     ) : (
-                      '—'
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 ring-1 ring-slate-500/20">
+                        Inativo
+                      </span>
                     )}
                   </td>
-                  <td className="px-4 py-3">
-                    {row.linuxUrl ? (
-                      <a
-                        href={row.linuxUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="font-medium text-brand-700 hover:underline"
-                      >
-                        Baixar
-                      </a>
-                    ) : (
-                      '—'
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    {row.macosUrl ? (
-                      <a
-                        href={row.macosUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="font-medium text-brand-700 hover:underline"
-                      >
-                        Baixar
-                      </a>
-                    ) : (
-                      '—'
-                    )}
-                  </td>
-                  <td className="px-4 py-3">{row.id}</td>
+                  <td className="px-4 py-3">{formatDate(customer.createdAt)}</td>
                 </tr>
               ))}
             </DataTable>
           )}
         </div>
       </div>
-
-      {isAdmin ? (
-        <AlertContactsPanel
-          contacts={alertContacts}
-          customers={customers}
-          canManage={isAdmin}
-        />
-      ) : null}
     </section>
   );
 }
