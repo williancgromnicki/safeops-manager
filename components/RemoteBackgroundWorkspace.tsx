@@ -44,16 +44,6 @@ type EventLogResponse = {
   total?: number;
 };
 
-type RegistryResponse = {
-  ok: boolean;
-  error?: string;
-  path?: string;
-  page?: number;
-  pageSize?: number;
-  keys?: RegistryKeyItem[];
-  values?: RegistryValueItem[];
-  raw?: unknown;
-};
 
 type ServiceActionResponse = {
   ok: boolean;
@@ -111,20 +101,6 @@ type EventLogItem = {
   raw?: unknown;
 };
 
-type RegistryKeyItem = {
-  name: string;
-  path: string;
-  lastModified?: string;
-  raw?: unknown;
-};
-
-type RegistryValueItem = {
-  name: string;
-  type: string;
-  value: string;
-  path: string;
-  raw?: unknown;
-};
 
 type EventLogName = 'Application' | 'System' | 'Security';
 
@@ -415,359 +391,6 @@ function matchesEventSeverity(level: string, filter: EventSeverityFilter) {
 }
 
 
-function normalizeRegistryPath(path: string) {
-  const cleaned = path.trim().replace(/\//g, '\\').replace(/\\+/g, '\\');
-
-  return cleaned || 'Computer';
-}
-
-function getRegistryParentPath(path: string) {
-  const normalized = normalizeRegistryPath(path);
-
-  if (normalized === 'Computer') {
-    return 'Computer';
-  }
-
-  const parts = normalized.split('\\').filter(Boolean);
-
-  if (parts.length <= 1) {
-    return 'Computer';
-  }
-
-  return parts.slice(0, -1).join('\\');
-}
-
-function buildRegistryBreadcrumbs(path: string) {
-  const normalized = normalizeRegistryPath(path);
-  const parts = normalized.split('\\').filter(Boolean);
-
-  if (parts.length === 0) {
-    return [{ label: 'Computer', path: 'Computer' }];
-  }
-
-  return parts.map((part, index) => ({
-    label: part,
-    path: parts.slice(0, index + 1).join('\\'),
-  }));
-}
-
-function truncateRegistryValue(value: string) {
-  if (value.length <= 220) return value;
-
-  return `${value.slice(0, 220)}...`;
-}
-
-
-
-
-function FileBrowserPanel({
-  fileUrl,
-  isLoading,
-  message,
-  deviceName,
-  onRefresh,
-}: {
-  fileUrl: string | null;
-  isLoading: boolean;
-  message: string | null;
-  deviceName: string;
-  onRefresh: () => void;
-}) {
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h3 className="text-sm font-semibold text-slate-900">
-            Navegador de arquivos
-          </h3>
-
-          <p className="mt-1 text-xs text-slate-600">
-            Acesse diretórios e arquivos do dispositivo em sessão controlada.
-          </p>
-        </div>
-
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={isLoading}
-          className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isLoading ? 'Renovando...' : 'Renovar sessão'}
-        </button>
-      </div>
-
-      {message ? (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-          {message}
-        </div>
-      ) : null}
-
-      <div className="overflow-hidden rounded-2xl border border-slate-300 bg-slate-950">
-        {isLoading ? (
-          <div className="flex min-h-[720px] items-center justify-center p-8 text-center">
-            <div>
-              <p className="text-sm font-semibold text-white">
-                Abrindo navegador de arquivos...
-              </p>
-              <p className="mt-2 text-xs text-slate-300">
-                Aguarde enquanto a sessão segura é preparada.
-              </p>
-            </div>
-          </div>
-        ) : fileUrl ? (
-          <iframe
-            title={`Navegador de arquivos - ${deviceName}`}
-            src={fileUrl}
-            className="h-[720px] w-full bg-white"
-            allow="clipboard-read; clipboard-write; fullscreen"
-          />
-        ) : (
-          <div className="flex min-h-[720px] items-center justify-center p-8 text-center">
-            <div>
-              <p className="text-sm font-semibold text-white">
-                Sessão não iniciada
-              </p>
-              <p className="mt-2 text-xs text-slate-300">
-                Clique em “Renovar sessão” para tentar novamente.
-              </p>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-
-function ServiceDetailsModal({
-  service,
-  isSavingStartup,
-  onSaveStartup,
-  onClose,
-}: {
-  service: ServiceItem;
-  isSavingStartup: boolean;
-  onSaveStartup: (
-    service: ServiceItem,
-    startupType: StartupType,
-  ) => Promise<void>;
-  onClose: () => void;
-}) {
-  const [startupType, setStartupType] = useState<StartupType>(
-    normalizeStartupType(service.startType),
-  );
-
-  const currentStartupType = normalizeStartupType(service.startType);
-  const hasStartupChanged = startupType !== currentStartupType;
-
-  async function handleSaveStartup() {
-    await onSaveStartup(service, startupType);
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4 py-6">
-      <div className="w-full max-w-3xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-        <div className="border-b border-slate-100 px-5 py-4">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">
-                Propriedades do serviço
-              </p>
-
-              <h3 className="mt-1 text-lg font-semibold text-slate-950">
-                {service.displayName}
-              </h3>
-
-              <p className="mt-1 text-sm text-slate-500">{service.name}</p>
-            </div>
-
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isSavingStartup}
-              className="rounded-lg px-2 py-1 text-sm font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-              aria-label="Fechar propriedades"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-
-        <div className="max-h-[70vh] space-y-5 overflow-auto px-5 py-5">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Status
-              </p>
-              <p className="mt-1 font-medium text-slate-900">
-                {getServiceStatusLabel(service.status)}
-              </p>
-            </div>
-
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <label
-                htmlFor="startup-type"
-                className="text-xs font-semibold uppercase tracking-wide text-slate-500"
-              >
-                Tipo de inicialização
-              </label>
-
-              <select
-                id="startup-type"
-                value={startupType}
-                onChange={(event) =>
-                  setStartupType(event.target.value as StartupType)
-                }
-                disabled={isSavingStartup}
-                className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-60"
-              >
-                <option value="automatic">Automático</option>
-                <option value="delayed">Automático com atraso</option>
-                <option value="manual">Manual</option>
-                <option value="disabled">Desabilitado</option>
-              </select>
-
-              <p className="mt-2 text-xs text-slate-500">
-                Atual: {getStartupLabel(currentStartupType)}
-              </p>
-            </div>
-
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Usuário
-              </p>
-              <p className="mt-1 break-all font-medium text-slate-900">
-                {service.username}
-              </p>
-            </div>
-
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                PID
-              </p>
-              <p className="mt-1 font-medium text-slate-900">
-                {formatPid(service.pid)}
-              </p>
-            </div>
-          </div>
-
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Descrição
-            </p>
-            <p className="mt-2 rounded-xl border border-slate-200 bg-white p-4 text-sm leading-relaxed text-slate-700">
-              {service.description || 'Sem descrição disponível.'}
-            </p>
-          </div>
-
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Caminho do executável
-            </p>
-            <pre className="mt-2 overflow-auto rounded-xl border border-slate-200 bg-slate-950 p-4 text-xs leading-relaxed text-slate-100">
-              {service.binPath || 'Não informado'}
-            </pre>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-            Início automático atrasado:{' '}
-            <span className="font-semibold text-slate-900">
-              {service.autoDelay ? 'Sim' : 'Não'}
-            </span>
-          </div>
-        </div>
-
-        <div className="flex flex-col-reverse gap-2 border-t border-slate-100 bg-slate-50 px-5 py-4 sm:flex-row sm:justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isSavingStartup}
-            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            Fechar
-          </button>
-
-          <button
-            type="button"
-            onClick={handleSaveStartup}
-            disabled={isSavingStartup || !hasStartupChanged}
-            className="inline-flex items-center justify-center rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isSavingStartup ? 'Salvando...' : 'Salvar tipo de inicialização'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ServiceActionConfirmModal({
-  service,
-  action,
-  isRunning,
-  onConfirm,
-  onClose,
-}: {
-  service: ServiceItem;
-  action: ServiceAction;
-  isRunning: boolean;
-  onConfirm: () => void;
-  onClose: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4 py-6">
-      <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-        <div className="border-b border-slate-100 px-5 py-4">
-          <h3 className="text-lg font-semibold text-slate-950">
-            Confirmar ação
-          </h3>
-          <p className="mt-1 text-sm text-slate-600">
-            Você está prestes a executar uma ação operacional em um serviço do
-            dispositivo.
-          </p>
-        </div>
-
-        <div className="space-y-4 px-5 py-5">
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Serviço
-            </p>
-            <p className="mt-1 font-semibold text-slate-900">
-              {service.displayName}
-            </p>
-            <p className="mt-1 text-xs text-slate-500">{service.name}</p>
-          </div>
-
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-relaxed text-amber-800">
-            Ação solicitada:{' '}
-            <span className="font-semibold">{getActionLabel(action)}</span>.
-            Confirme apenas se você entende o impacto operacional dessa ação.
-          </div>
-        </div>
-
-        <div className="flex flex-col-reverse gap-2 border-t border-slate-100 bg-slate-50 px-5 py-4 sm:flex-row sm:justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isRunning}
-            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            Cancelar
-          </button>
-
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={isRunning}
-            className="inline-flex items-center justify-center rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isRunning ? 'Executando...' : `Confirmar ${getActionLabel(action)}`}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function EventDetailsModal({
   event,
@@ -1414,224 +1037,42 @@ function ServicesPanel({
   );
 }
 
-function RegistryValueDetailsModal({
-  value,
-  onClose,
-}: {
-  value: RegistryValueItem;
-  onClose: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4 py-6">
-      <div className="w-full max-w-3xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-        <div className="border-b border-slate-100 px-5 py-4">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">
-                Detalhes do valor
-              </p>
-
-              <h3 className="mt-1 text-lg font-semibold text-slate-950">
-                {value.name || '(Padrão)'}
-              </h3>
-
-              <p className="mt-1 text-sm text-slate-500">{value.type}</p>
-            </div>
-
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg px-2 py-1 text-sm font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
-              aria-label="Fechar detalhes do valor"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-
-        <div className="max-h-[72vh] space-y-5 overflow-auto px-5 py-5">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Caminho
-            </p>
-            <pre className="mt-2 overflow-auto rounded-xl border border-slate-200 bg-slate-950 p-4 text-xs leading-relaxed text-slate-100">
-              {value.path}
-            </pre>
-          </div>
-
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Valor
-            </p>
-            <pre className="mt-2 max-h-[420px] overflow-auto whitespace-pre-wrap rounded-xl border border-slate-200 bg-slate-950 p-4 text-xs leading-relaxed text-slate-100">
-              {value.value || 'Não informado'}
-            </pre>
-          </div>
-        </div>
-
-        <div className="border-t border-slate-100 bg-slate-50 px-5 py-4 text-right">
-          <button
-            type="button"
-            onClick={onClose}
-            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-          >
-            Fechar
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function RegistryPanel({
-  currentPath,
-  keys,
-  values,
+  registryUrl,
   isLoading,
   message,
-  lastUpdatedAt,
-  onNavigate,
+  deviceName,
   onRefresh,
 }: {
-  currentPath: string;
-  keys: RegistryKeyItem[];
-  values: RegistryValueItem[];
+  registryUrl: string | null;
   isLoading: boolean;
   message: string | null;
-  lastUpdatedAt: Date | null;
-  onNavigate: (path: string) => void;
+  deviceName: string;
   onRefresh: () => void;
 }) {
-  const [pathInput, setPathInput] = useState(currentPath);
-  const [search, setSearch] = useState('');
-  const [selectedValue, setSelectedValue] = useState<RegistryValueItem | null>(
-    null,
-  );
-
-  useEffect(() => {
-    setPathInput(currentPath);
-  }, [currentPath]);
-
-  const normalizedSearch = search.trim().toLowerCase();
-
-  const filteredKeys = useMemo(() => {
-    if (!normalizedSearch) return keys;
-
-    return keys.filter((item) => {
-      return (
-        item.name.toLowerCase().includes(normalizedSearch) ||
-        item.path.toLowerCase().includes(normalizedSearch)
-      );
-    });
-  }, [keys, normalizedSearch]);
-
-  const filteredValues = useMemo(() => {
-    if (!normalizedSearch) return values;
-
-    return values.filter((item) => {
-      return (
-        item.name.toLowerCase().includes(normalizedSearch) ||
-        item.type.toLowerCase().includes(normalizedSearch) ||
-        item.value.toLowerCase().includes(normalizedSearch)
-      );
-    });
-  }, [values, normalizedSearch]);
-
-  const breadcrumbs = buildRegistryBreadcrumbs(currentPath);
-
-  function handleSubmitPath(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    const nextPath = normalizeRegistryPath(pathInput);
-    onNavigate(nextPath);
-  }
-
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 xl:flex-row xl:items-center xl:justify-between">
+      <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h3 className="text-sm font-semibold text-slate-900">
             Registro do dispositivo
           </h3>
 
           <p className="mt-1 text-xs text-slate-600">
-            {keys.length} chaves • {values.length} valores
-            {lastUpdatedAt
-              ? ` • Última atualização: ${lastUpdatedAt.toLocaleTimeString()}`
-              : null}
+            Navegue e gerencie chaves e valores do Registro em uma sessão controlada.
           </p>
         </div>
 
-        <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
-          <input
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Buscar chave, nome, tipo ou valor..."
-            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 lg:w-80"
-          />
-
-          <button
-            type="button"
-            onClick={onRefresh}
-            disabled={isLoading}
-            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isLoading ? 'Atualizando...' : 'Atualizar'}
-          </button>
-        </div>
-      </div>
-
-      <form
-        onSubmit={handleSubmitPath}
-        className="rounded-2xl border border-slate-200 bg-white p-4"
-      >
-        <label
-          htmlFor="registry-path"
-          className="text-xs font-semibold uppercase tracking-wide text-slate-500"
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={isLoading}
+          className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Caminho atual
-        </label>
-
-        <div className="mt-2 flex flex-col gap-2 lg:flex-row lg:items-center">
-          <input
-            id="registry-path"
-            value={pathInput}
-            onChange={(event) => setPathInput(event.target.value)}
-            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-800 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
-          />
-
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="inline-flex items-center justify-center rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            Abrir
-          </button>
-
-          <button
-            type="button"
-            onClick={() => onNavigate(getRegistryParentPath(currentPath))}
-            disabled={isLoading || normalizeRegistryPath(currentPath) === 'Computer'}
-            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            Voltar
-          </button>
-        </div>
-
-        <div className="mt-3 flex flex-wrap gap-2 text-xs">
-          {breadcrumbs.map((item, index) => (
-            <button
-              key={`${item.path}-${index}`}
-              type="button"
-              onClick={() => onNavigate(item.path)}
-              className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-medium text-slate-600 transition hover:bg-brand-50 hover:text-brand-700"
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      </form>
+          {isLoading ? 'Renovando...' : 'Renovar sessão'}
+        </button>
+      </div>
 
       {message ? (
         <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
@@ -1639,161 +1080,38 @@ function RegistryPanel({
         </div>
       ) : null}
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-          <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
-            <h4 className="text-sm font-semibold text-slate-900">Chaves</h4>
+      <div className="overflow-hidden rounded-2xl border border-slate-300 bg-slate-950">
+        {isLoading ? (
+          <div className="flex min-h-[720px] items-center justify-center p-8 text-center">
+            <div>
+              <p className="text-sm font-semibold text-white">
+                Abrindo Registro...
+              </p>
+              <p className="mt-2 text-xs text-slate-300">
+                Aguarde enquanto a sessão segura é preparada.
+              </p>
+            </div>
           </div>
-
-          <div className="max-h-[620px] overflow-auto">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="sticky top-0 z-10 bg-slate-50">
-                <tr>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">
-                    Nome
-                  </th>
-                  <th className="px-4 py-3 text-right font-semibold text-slate-700">
-                    Ações
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody className="divide-y divide-slate-100 bg-white">
-                {isLoading && keys.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={2}
-                      className="px-4 py-8 text-center text-slate-500"
-                    >
-                      Carregando chaves...
-                    </td>
-                  </tr>
-                ) : null}
-
-                {!isLoading && filteredKeys.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={2}
-                      className="px-4 py-8 text-center text-slate-500"
-                    >
-                      Nenhuma chave encontrada.
-                    </td>
-                  </tr>
-                ) : null}
-
-                {filteredKeys.map((item) => (
-                  <tr key={item.path} className="align-top">
-                    <td className="px-4 py-3">
-                      <p className="font-semibold text-slate-900">{item.name}</p>
-                      <p className="mt-1 break-all font-mono text-xs text-slate-500">
-                        {item.path}
-                      </p>
-                    </td>
-
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => onNavigate(item.path)}
-                        className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-                      >
-                        Abrir
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        ) : registryUrl ? (
+          <iframe
+            title={`Registro do dispositivo - ${deviceName}`}
+            src={registryUrl}
+            className="h-[720px] w-full bg-white"
+            allow="clipboard-read; clipboard-write; fullscreen"
+          />
+        ) : (
+          <div className="flex min-h-[720px] items-center justify-center p-8 text-center">
+            <div>
+              <p className="text-sm font-semibold text-white">
+                Sessão não iniciada
+              </p>
+              <p className="mt-2 text-xs text-slate-300">
+                Clique em “Renovar sessão” para tentar novamente.
+              </p>
+            </div>
           </div>
-        </div>
-
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-          <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
-            <h4 className="text-sm font-semibold text-slate-900">Valores</h4>
-          </div>
-
-          <div className="max-h-[620px] overflow-auto">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="sticky top-0 z-10 bg-slate-50">
-                <tr>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">
-                    Nome
-                  </th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">
-                    Tipo
-                  </th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">
-                    Valor
-                  </th>
-                  <th className="px-4 py-3 text-right font-semibold text-slate-700">
-                    Ações
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody className="divide-y divide-slate-100 bg-white">
-                {isLoading && values.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={4}
-                      className="px-4 py-8 text-center text-slate-500"
-                    >
-                      Carregando valores...
-                    </td>
-                  </tr>
-                ) : null}
-
-                {!isLoading && filteredValues.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={4}
-                      className="px-4 py-8 text-center text-slate-500"
-                    >
-                      Nenhum valor encontrado.
-                    </td>
-                  </tr>
-                ) : null}
-
-                {filteredValues.map((item) => (
-                  <tr key={`${item.path}-${item.name}`} className="align-top">
-                    <td className="max-w-xs px-4 py-3">
-                      <p className="break-all font-semibold text-slate-900">
-                        {item.name || '(Padrão)'}
-                      </p>
-                    </td>
-
-                    <td className="whitespace-nowrap px-4 py-3 text-slate-700">
-                      {item.type}
-                    </td>
-
-                    <td className="max-w-md px-4 py-3">
-                      <p className="break-all font-mono text-xs leading-relaxed text-slate-600">
-                        {truncateRegistryValue(item.value)}
-                      </p>
-                    </td>
-
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedValue(item)}
-                        className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-                      >
-                        Detalhes
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        )}
       </div>
-
-      {selectedValue ? (
-        <RegistryValueDetailsModal
-          value={selectedValue}
-          onClose={() => setSelectedValue(null)}
-        />
-      ) : null}
     </div>
   );
 }
@@ -2350,14 +1668,10 @@ export function RemoteBackgroundWorkspace({
   const [eventLogLastUpdatedAt, setEventLogLastUpdatedAt] =
     useState<Date | null>(null);
 
-  const [registryPath, setRegistryPath] = useState('Computer');
-  const [registryKeys, setRegistryKeys] = useState<RegistryKeyItem[]>([]);
-  const [registryValues, setRegistryValues] = useState<RegistryValueItem[]>([]);
+  const [registryUrl, setRegistryUrl] = useState<string | null>(null);
   const [isLoadingRegistry, setIsLoadingRegistry] = useState(false);
   const [registryMessage, setRegistryMessage] = useState<string | null>(null);
   const [hasLoadedRegistry, setHasLoadedRegistry] = useState(false);
-  const [registryLastUpdatedAt, setRegistryLastUpdatedAt] =
-    useState<Date | null>(null);
 
   const isLinuxDevice = isLinuxOperatingSystem(operatingSystem);
 
@@ -2567,51 +1881,43 @@ export function RemoteBackgroundWorkspace({
     }
   }, [customerId, deviceId, selectedEventLog]);
 
-  const loadRegistry = useCallback(
-    async (pathOverride?: string) => {
-      const nextPath = normalizeRegistryPath(pathOverride ?? registryPath);
+  const loadRegistrySession = useCallback(async () => {
+    try {
+      setIsLoadingRegistry(true);
+      setRegistryMessage(null);
 
-      try {
-        setIsLoadingRegistry(true);
-        setRegistryMessage(null);
+      const response = await fetch(
+        `/api/devices/${encodeURIComponent(
+          deviceId,
+        )}/remote-background/registry/session?customerId=${encodeURIComponent(
+          customerId,
+        )}`,
+        {
+          method: 'POST',
+          cache: 'no-store',
+        },
+      );
 
-        const response = await fetch(
-          `/api/devices/${encodeURIComponent(
-            deviceId,
-          )}/remote-background/registry?customerId=${encodeURIComponent(
-            customerId,
-          )}&path=${encodeURIComponent(nextPath)}&page=1&pageSize=400`,
-          {
-            method: 'GET',
-            cache: 'no-store',
-          },
+      const data = (await response.json()) as RemoteBackgroundResponse;
+
+      if (!response.ok || !data.ok || !data.url) {
+        throw new Error(
+          data.error ?? 'Não foi possível abrir o Registro do dispositivo.',
         );
-
-        const data = (await response.json()) as RegistryResponse;
-
-        if (!response.ok || !data.ok) {
-          throw new Error(
-            data.error ?? 'Não foi possível carregar o registro.',
-          );
-        }
-
-        setRegistryPath(data.path ?? nextPath);
-        setRegistryKeys(Array.isArray(data.keys) ? data.keys : []);
-        setRegistryValues(Array.isArray(data.values) ? data.values : []);
-        setHasLoadedRegistry(true);
-        setRegistryLastUpdatedAt(new Date());
-      } catch (error) {
-        setRegistryMessage(
-          error instanceof Error
-            ? error.message
-            : 'Erro ao carregar registro.',
-        );
-      } finally {
-        setIsLoadingRegistry(false);
       }
-    },
-    [customerId, deviceId, registryPath],
-  );
+
+      setRegistryUrl(data.url);
+      setHasLoadedRegistry(true);
+    } catch (error) {
+      setRegistryMessage(
+        error instanceof Error
+          ? error.message
+          : 'Erro ao abrir Registro do dispositivo.',
+      );
+    } finally {
+      setIsLoadingRegistry(false);
+    }
+  }, [customerId, deviceId]);
 
   const runServiceAction = useCallback(
     async (
@@ -2804,9 +2110,9 @@ export function RemoteBackgroundWorkspace({
 
   useEffect(() => {
     if (activeTab === 'registry' && !hasLoadedRegistry) {
-      void loadRegistry();
+      void loadRegistrySession();
     }
-  }, [activeTab, hasLoadedRegistry, loadRegistry]);
+  }, [activeTab, hasLoadedRegistry, loadRegistrySession]);
 
 
 
@@ -2985,18 +2291,11 @@ export function RemoteBackgroundWorkspace({
 
           {activeTab === 'registry' ? (
             <RegistryPanel
-              currentPath={registryPath}
-              keys={registryKeys}
-              values={registryValues}
+              registryUrl={registryUrl}
               isLoading={isLoadingRegistry}
               message={registryMessage}
-              lastUpdatedAt={registryLastUpdatedAt}
-              onNavigate={(nextPath) => {
-                void loadRegistry(nextPath);
-              }}
-              onRefresh={() => {
-                void loadRegistry();
-              }}
+              deviceName={deviceName}
+              onRefresh={loadRegistrySession}
             />
           ) : null}
         </div>
