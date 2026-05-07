@@ -6,6 +6,7 @@ type RemoteBackgroundWorkspaceProps = {
   deviceId: string;
   customerId: string;
   deviceName: string;
+  operatingSystem?: string | null;
 };
 
 type RemoteBackgroundResponse = {
@@ -90,6 +91,7 @@ const tabs: Array<{
   key: RemoteTab;
   label: string;
   description: string;
+  windowsOnly?: boolean;
 }> = [
   {
     key: 'terminal',
@@ -105,6 +107,7 @@ const tabs: Array<{
     key: 'services',
     label: 'Services',
     description: 'Serviços do Windows e respectivos estados.',
+    windowsOnly: true,
   },
   {
     key: 'processes',
@@ -115,13 +118,32 @@ const tabs: Array<{
     key: 'eventlog',
     label: 'Event Log',
     description: 'Eventos do Windows com filtros operacionais.',
+    windowsOnly: true,
   },
   {
     key: 'registry',
     label: 'Registry',
     description: 'Consulta controlada ao Registro do Windows.',
+    windowsOnly: true,
   },
 ];
+
+function isLinuxOperatingSystem(operatingSystem?: string | null) {
+  const normalized = operatingSystem?.toLowerCase() ?? '';
+
+  return (
+    normalized.includes('linux') ||
+    normalized.includes('ubuntu') ||
+    normalized.includes('debian') ||
+    normalized.includes('centos') ||
+    normalized.includes('red hat') ||
+    normalized.includes('redhat') ||
+    normalized.includes('fedora') ||
+    normalized.includes('suse') ||
+    normalized.includes('rocky') ||
+    normalized.includes('alma')
+  );
+}
 
 const autoRefreshOptions = [
   { label: 'Desligado', value: 0 },
@@ -1388,6 +1410,7 @@ export function RemoteBackgroundWorkspace({
   deviceId,
   customerId,
   deviceName,
+  operatingSystem,
 }: RemoteBackgroundWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<RemoteTab>('terminal');
   const [terminalUrl, setTerminalUrl] = useState<string | null>(null);
@@ -1435,9 +1458,16 @@ export function RemoteBackgroundWorkspace({
     string | null
   >(null);
 
+  const isLinuxDevice = isLinuxOperatingSystem(operatingSystem);
+
+  const visibleTabs = useMemo(
+    () => tabs.filter((tab) => !(isLinuxDevice && tab.windowsOnly)),
+    [isLinuxDevice],
+  );
+
   const activeTabDescription = useMemo(
-    () => tabs.find((tab) => tab.key === activeTab)?.description ?? '',
-    [activeTab],
+    () => visibleTabs.find((tab) => tab.key === activeTab)?.description ?? '',
+    [activeTab, visibleTabs],
   );
 
   const loadTerminalSession = useCallback(async () => {
@@ -1719,6 +1749,14 @@ export function RemoteBackgroundWorkspace({
   );
 
   useEffect(() => {
+    const activeTabIsVisible = visibleTabs.some((tab) => tab.key === activeTab);
+
+    if (!activeTabIsVisible) {
+      setActiveTab('terminal');
+    }
+  }, [activeTab, visibleTabs]);
+
+  useEffect(() => {
     void loadTerminalSession();
   }, [loadTerminalSession]);
 
@@ -1797,7 +1835,7 @@ export function RemoteBackgroundWorkspace({
       <div className="rounded-2xl border border-surface-border bg-white shadow-sm">
         <div className="border-b border-slate-200 px-4 pt-4">
           <div className="flex gap-2 overflow-x-auto">
-            {tabs.map((tab) => {
+            {visibleTabs.map((tab) => {
               const isActive = activeTab === tab.key;
 
               return (
