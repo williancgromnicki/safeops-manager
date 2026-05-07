@@ -50,6 +50,10 @@ function getOperationsApiKey(): string {
 }
 
 function validatePid(pid: unknown): pid is number {
+  if (typeof pid !== 'number') {
+    return false;
+  }
+
   return Number.isInteger(pid) && pid > 0 && pid <= 9999999;
 }
 
