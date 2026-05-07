@@ -76,9 +76,12 @@ export function DeviceActionsMenu({
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [isOpeningRemote, setIsOpeningRemote] = useState(false);
-  const [isOpeningBackground, setIsOpeningBackground] = useState(false);
   const [isSoftwareModalOpen, setIsSoftwareModalOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+
+  const remoteBackgroundHref = `/devices/${encodeURIComponent(
+    deviceId,
+  )}/remote-background?customerId=${encodeURIComponent(customerId)}`;
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -97,15 +100,10 @@ export function DeviceActionsMenu({
     };
   }, []);
 
-  async function openRemoteUrl(endpoint: string, type: 'remote' | 'background') {
+  async function openRemoteUrl(endpoint: string) {
     try {
       setMessage(null);
-
-      if (type === 'remote') {
-        setIsOpeningRemote(true);
-      } else {
-        setIsOpeningBackground(true);
-      }
+      setIsOpeningRemote(true);
 
       const response = await fetch(
         `${endpoint}?customerId=${encodeURIComponent(customerId)}`,
@@ -133,7 +131,6 @@ export function DeviceActionsMenu({
       );
     } finally {
       setIsOpeningRemote(false);
-      setIsOpeningBackground(false);
     }
   }
 
@@ -166,32 +163,21 @@ export function DeviceActionsMenu({
                 onClick={() =>
                   openRemoteUrl(
                     `/api/devices/${encodeURIComponent(deviceId)}/remote`,
-                    'remote',
                   )
                 }
-                disabled={isOpeningRemote || isOpeningBackground}
+                disabled={isOpeningRemote}
                 className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-brand-50 hover:text-brand-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isOpeningRemote ? 'Abrindo acesso remoto...' : 'Acesso remoto'}
               </button>
 
-              <button
-                type="button"
-                onClick={() =>
-                  openRemoteUrl(
-                    `/api/devices/${encodeURIComponent(
-                      deviceId,
-                    )}/remote-background`,
-                    'background',
-                  )
-                }
-                disabled={isOpeningRemote || isOpeningBackground}
-                className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-brand-50 hover:text-brand-800 disabled:cursor-not-allowed disabled:opacity-60"
+              <Link
+                href={remoteBackgroundHref}
+                onClick={() => setIsOpen(false)}
+                className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-slate-700 transition hover:bg-brand-50 hover:text-brand-800"
               >
-                {isOpeningBackground
-                  ? 'Abrindo Remote Background...'
-                  : 'Remote Background'}
-              </button>
+                Remote Background
+              </Link>
 
               <button
                 type="button"
@@ -200,7 +186,7 @@ export function DeviceActionsMenu({
                   setMessage(null);
                   setIsSoftwareModalOpen(true);
                 }}
-                disabled={isOpeningRemote || isOpeningBackground}
+                disabled={isOpeningRemote}
                 className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-brand-50 hover:text-brand-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Instalar software
