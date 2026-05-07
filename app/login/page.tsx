@@ -18,19 +18,6 @@ async function login(formData: FormData) {
   redirect('/dashboard');
 }
 
-async function recoverAccess(formData: FormData) {
-  'use server';
-
-  const email = String(formData.get('email') ?? '');
-
-  const supabase = await createClient();
-  await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: '/login',
-  });
-
-  redirect('/login?recovery=sent');
-}
-
 export default function LoginPage() {
   return (
     <section className="mx-auto max-w-md card">
