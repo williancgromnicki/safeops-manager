@@ -458,35 +458,6 @@ function truncateRegistryValue(value: string) {
 }
 
 
-function PlaceholderPanel({
-  title,
-  description,
-}: {
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="flex min-h-[420px] items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
-      <div className="max-w-md">
-        <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">
-          Em desenvolvimento
-        </p>
-
-        <h3 className="mt-2 text-lg font-semibold text-slate-900">{title}</h3>
-
-        <p className="mt-2 text-sm leading-relaxed text-slate-600">
-          {description}
-        </p>
-
-        <p className="mt-4 text-xs leading-relaxed text-slate-500">
-          Esta funcionalidade será disponibilizada em uma próxima atualização do
-          SafeOps Manager, com controle de permissão, rastreabilidade e operação
-          segura para equipes de TI.
-        </p>
-      </div>
-    </div>
-  );
-}
 
 
 function FileBrowserPanel({
