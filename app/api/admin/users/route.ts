@@ -168,6 +168,21 @@ async function findUserByEmail(email: string): Promise<User | null> {
   return null;
 }
 
+async function assertClientManagerCanUseTargetUser(input: {
+  managerRole: string;
+  targetUserId: string;
+}) {
+  if (input.managerRole === 'admin') {
+    return;
+  }
+
+  const accessRows = await getUserAccessRows(input.targetUserId);
+
+  if (isSafesysAdmin(accessRows)) {
+    throw new Error('CannotManageAdminUser');
+  }
+}
+
 async function createOrUpdateAuthUser(input: {
   email: string;
   password: string;
@@ -354,20 +369,28 @@ export async function GET(request: NextRequest) {
 
     const rows = (data ?? []) as unknown as ManagedUserRow[];
 
-    const users = rows.map((row) => {
-      const customerAccess = row.user_customer_access?.[0] ?? null;
+    const users = rows
+      .map((row) => {
+        const customerAccess = row.user_customer_access?.[0] ?? null;
 
-      return {
-        id: row.id,
-        email: row.email,
-        fullName: row.full_name,
-        portalRole: row.role,
-        customerRole: customerAccess?.role ?? 'viewer',
-        mustChangePassword: Boolean(row.must_change_password),
-        disabledAt: row.disabled_at,
-        createdAt: row.created_at,
-      };
-    });
+        return {
+          id: row.id,
+          email: row.email,
+          fullName: row.full_name,
+          portalRole: row.role,
+          customerRole: customerAccess?.role ?? 'viewer',
+          mustChangePassword: Boolean(row.must_change_password),
+          disabledAt: row.disabled_at,
+          createdAt: row.created_at,
+        };
+      })
+      .filter((managedUser) => {
+        if (managerRole === 'admin') {
+          return true;
+        }
+
+        return normalizeRole(managedUser.customerRole) !== 'admin';
+      });
 
     return NextResponse.json({
       ok: true,
@@ -474,6 +497,11 @@ export async function POST(request: NextRequest) {
       fullName,
     });
 
+    await assertClientManagerCanUseTargetUser({
+      managerRole,
+      targetUserId: user.id,
+    });
+
     await upsertProfile({
       userId: user.id,
       email,
@@ -498,13 +526,23 @@ export async function POST(request: NextRequest) {
         : 'Usuário existente atualizado e vinculado com sucesso.',
     });
   } catch (error) {
+    const message =
+      error instanceof Error ? error.message : 'Erro interno ao criar usuário.';
+
+    if (message === 'CannotManageAdminUser') {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'Usuários cliente não podem vincular ou alterar administradores Safesys.',
+        },
+        { status: 403 },
+      );
+    }
+
     return NextResponse.json(
       {
         ok: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : 'Erro interno ao criar usuário.',
+        error: message,
       },
       { status: 500 },
     );
