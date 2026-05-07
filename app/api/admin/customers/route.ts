@@ -66,6 +66,16 @@ function slugify(value: string): string {
     .slice(0, 80);
 }
 
+function tableDoesNotExist(errorMessage: string): boolean {
+  const normalized = errorMessage.toLowerCase();
+
+  return (
+    normalized.includes('could not find the table') ||
+    normalized.includes('relation') && normalized.includes('does not exist') ||
+    normalized.includes('schema cache')
+  );
+}
+
 async function getAuthenticatedUser() {
   const supabase = await createClient();
 
@@ -121,6 +131,67 @@ async function assertSafesysAdmin(userId: string) {
   }
 }
 
+async function listSitesForCustomers(customerIds: string[]): Promise<SiteRow[]> {
+  if (customerIds.length === 0) {
+    return [];
+  }
+
+  const supabaseAdmin = getSupabaseAdmin();
+
+  const { data, error } = await supabaseAdmin
+    .from('sites')
+    .select(
+      [
+        'id',
+        'customer_id',
+        'name',
+        'slug',
+        'tactical_site_id',
+        'notes',
+        'is_active',
+        'created_at',
+        'updated_at',
+      ].join(', '),
+    )
+    .in('customer_id', customerIds)
+    .order('name', { ascending: true });
+
+  if (error) {
+    if (tableDoesNotExist(error.message)) {
+      console.warn('Tabela sites ainda não existe. A listagem seguirá sem unidades.');
+      return [];
+    }
+
+    throw new Error(`Erro ao listar sites: ${error.message}`);
+  }
+
+  return (data ?? []) as unknown as SiteRow[];
+}
+
+async function tryCreateDefaultSite(input: {
+  customerId: string;
+  name: string;
+}) {
+  const supabaseAdmin = getSupabaseAdmin();
+
+  const { error } = await supabaseAdmin.from('sites').insert({
+    customer_id: input.customerId,
+    name: input.name,
+    slug: slugify(input.name),
+    is_active: true,
+  });
+
+  if (error && !tableDoesNotExist(error.message)) {
+    throw new Error(
+      `Cliente criado, mas falhou ao criar unidade padrão: ${error.message}`,
+    );
+  }
+
+  if (error && tableDoesNotExist(error.message)) {
+    console.warn('Tabela sites ainda não existe. Cliente criado sem unidade padrão.');
+  }
+}
+
 export async function GET() {
   try {
     const user = await getAuthenticatedUser();
@@ -163,34 +234,7 @@ export async function GET() {
 
     const customers = (customersData ?? []) as unknown as CustomerRow[];
     const customerIds = customers.map((customer) => customer.id);
-
-    let sites: SiteRow[] = [];
-
-    if (customerIds.length > 0) {
-      const { data: sitesData, error: sitesError } = await supabaseAdmin
-        .from('sites')
-        .select(
-          [
-            'id',
-            'customer_id',
-            'name',
-            'slug',
-            'tactical_site_id',
-            'notes',
-            'is_active',
-            'created_at',
-            'updated_at',
-          ].join(', '),
-        )
-        .in('customer_id', customerIds)
-        .order('name', { ascending: true });
-
-      if (sitesError) {
-        throw new Error(`Erro ao listar sites: ${sitesError.message}`);
-      }
-
-      sites = (sitesData ?? []) as unknown as SiteRow[];
-    }
+    const sites = await listSitesForCustomers(customerIds);
 
     const sitesByCustomerId = new Map<string, SiteRow[]>();
 
@@ -327,20 +371,10 @@ export async function POST(request: NextRequest) {
     const defaultSiteName = cleanString(payload.defaultSiteName) ?? 'Matriz';
 
     if (createDefaultSite) {
-      const siteSlug = slugify(defaultSiteName);
-
-      const { error: siteError } = await supabaseAdmin.from('sites').insert({
-        customer_id: customer.id,
+      await tryCreateDefaultSite({
+        customerId: customer.id,
         name: defaultSiteName,
-        slug: siteSlug,
-        is_active: true,
       });
-
-      if (siteError) {
-        throw new Error(
-          `Cliente criado, mas falhou ao criar site padrão: ${siteError.message}`,
-        );
-      }
     }
 
     return NextResponse.json({

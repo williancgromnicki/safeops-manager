@@ -499,8 +499,7 @@ export function AdminCustomersPanel() {
       <div className="rounded-2xl border border-surface-border bg-white p-5 shadow-sm">
         <h2 className="section-title">Clientes e sites</h2>
         <p className="mt-2 text-sm text-slate-600">
-          Cadastre clientes, unidades/sites e mantenha os identificadores
-          operacionais usados na integração.
+          Cadastre e organize os clientes e suas unidades no SafeOps Manager.
         </p>
       </div>
 
@@ -661,7 +660,7 @@ export function AdminCustomersPanel() {
                 />
               </FieldLabel>
 
-              <FieldLabel label="ID do cliente na integração operacional">
+              <FieldLabel label="Referência externa do cliente">
                 <input
                   className={inputClassName}
                   value={editTacticalClientId}
@@ -768,7 +767,7 @@ export function AdminCustomersPanel() {
                   />
                 </FieldLabel>
 
-                <FieldLabel label="ID do site na integração operacional">
+                <FieldLabel label="Referência externa do site">
                   <input
                     className={inputClassName}
                     value={newTacticalSiteId}
@@ -847,7 +846,7 @@ export function AdminCustomersPanel() {
                       />
                     </FieldLabel>
 
-                    <FieldLabel label="ID do site na integração operacional">
+                    <FieldLabel label="Referência externa do site">
                       <input
                         className={inputClassName}
                         value={editTacticalSiteId}
