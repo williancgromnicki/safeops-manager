@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 
 import { DataTable } from '@/components/DataTable';
 import { EmptyState } from '@/components/EmptyState';
-import { listAllowedCustomersForAdminService } from '@/lib/services/admin';
+import { createClient } from '@/lib/supabase/server';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
@@ -28,6 +28,56 @@ type SiteRow = {
   id: string;
   customer_id: string;
 };
+
+type AccessRow = {
+  role: string | null;
+};
+
+function normalizeRole(role?: string | null): string {
+  return role?.trim().toLowerCase() ?? '';
+}
+
+async function getAuthenticatedUserId(): Promise<string | null> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+
+  if (error) {
+    const message = error.message.toLowerCase();
+
+    if (
+      message.includes('auth session missing') ||
+      message.includes('session missing') ||
+      message.includes('jwt')
+    ) {
+      return null;
+    }
+
+    throw new Error(`Erro ao validar usuário autenticado: ${error.message}`);
+  }
+
+  return user?.id ?? null;
+}
+
+async function userIsSafesysAdmin(userId: string): Promise<boolean> {
+  const supabaseAdmin = getSupabaseAdmin();
+
+  const { data, error } = await supabaseAdmin
+    .from('user_customer_access')
+    .select('role')
+    .eq('user_id', userId);
+
+  if (error) {
+    throw new Error(`Erro ao validar permissões administrativas: ${error.message}`);
+  }
+
+  const rows = (data ?? []) as unknown as AccessRow[];
+
+  return rows.some((row) => normalizeRole(row.role) === 'admin');
+}
 
 async function listAdminCustomers(): Promise<AdminCustomer[]> {
   const supabaseAdmin = getSupabaseAdmin();
@@ -91,47 +141,47 @@ function formatDate(value?: string | null): string {
 }
 
 export default async function AdminPage() {
-  let isAdmin = false;
   let customers: AdminCustomer[] = [];
   let errorMessage = '';
 
   try {
-    const result = await listAllowedCustomersForAdminService();
+    const userId = await getAuthenticatedUserId();
 
-    isAdmin = result.isAdmin;
-
-    if (isAdmin) {
-      customers = await listAdminCustomers();
-    }
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('Unauthorized')) {
+    if (!userId) {
       redirect('/login');
+    }
+
+    const isAdmin = await userIsSafesysAdmin(userId);
+
+    if (!isAdmin) {
+      return (
+        <section className="space-y-6">
+          <div>
+            <h2 className="section-title">Painel administrativo</h2>
+            <p className="mt-2 text-sm text-slate-600">
+              Área interna da Safesys para gestão operacional do SafeOps Manager.
+            </p>
+          </div>
+
+          <EmptyState
+            title="Acesso não permitido"
+            description="Seu usuário não possui permissão para acessar esta área."
+          />
+        </section>
+      );
+    }
+
+    customers = await listAdminCustomers();
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('NEXT_REDIRECT')) {
+      throw error;
     }
 
     console.error('Erro ao carregar painel administrativo:', error);
 
-    isAdmin = false;
     customers = [];
     errorMessage =
       'Não foi possível carregar o painel administrativo neste momento.';
-  }
-
-  if (!isAdmin) {
-    return (
-      <section className="space-y-6">
-        <div>
-          <h2 className="section-title">Painel administrativo</h2>
-          <p className="mt-2 text-sm text-slate-600">
-            Área interna da Safesys para gestão operacional do SafeOps Manager.
-          </p>
-        </div>
-
-        <EmptyState
-          title="Acesso não permitido"
-          description="Seu usuário não possui permissão para acessar esta área."
-        />
-      </section>
-    );
   }
 
   return (
