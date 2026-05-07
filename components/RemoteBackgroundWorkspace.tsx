@@ -44,6 +44,17 @@ type EventLogResponse = {
   total?: number;
 };
 
+type RegistryResponse = {
+  ok: boolean;
+  error?: string;
+  path?: string;
+  page?: number;
+  pageSize?: number;
+  keys?: RegistryKeyItem[];
+  values?: RegistryValueItem[];
+  raw?: unknown;
+};
+
 type ServiceActionResponse = {
   ok: boolean;
   status?: 'success' | 'warning' | 'failed';
@@ -97,6 +108,21 @@ type EventLogItem = {
   message: string;
   logName: string;
   provider: string;
+  raw?: unknown;
+};
+
+type RegistryKeyItem = {
+  name: string;
+  path: string;
+  lastModified?: string;
+  raw?: unknown;
+};
+
+type RegistryValueItem = {
+  name: string;
+  type: string;
+  value: string;
+  path: string;
   raw?: unknown;
 };
 
@@ -386,6 +412,49 @@ function matchesEventSeverity(level: string, filter: EventSeverityFilter) {
     normalized.includes('informação') ||
     normalized.includes('info')
   );
+}
+
+
+function normalizeRegistryPath(path: string) {
+  const cleaned = path.trim().replace(/\//g, '\\').replace(/\\+/g, '\\');
+
+  return cleaned || 'Computer';
+}
+
+function getRegistryParentPath(path: string) {
+  const normalized = normalizeRegistryPath(path);
+
+  if (normalized === 'Computer') {
+    return 'Computer';
+  }
+
+  const parts = normalized.split('\\').filter(Boolean);
+
+  if (parts.length <= 1) {
+    return 'Computer';
+  }
+
+  return parts.slice(0, -1).join('\\');
+}
+
+function buildRegistryBreadcrumbs(path: string) {
+  const normalized = normalizeRegistryPath(path);
+  const parts = normalized.split('\\').filter(Boolean);
+
+  if (parts.length === 0) {
+    return [{ label: 'Computer', path: 'Computer' }];
+  }
+
+  return parts.map((part, index) => ({
+    label: part,
+    path: parts.slice(0, index + 1).join('\\'),
+  }));
+}
+
+function truncateRegistryValue(value: string) {
+  if (value.length <= 220) return value;
+
+  return `${value.slice(0, 220)}...`;
 }
 
 
@@ -1374,6 +1443,391 @@ function ServicesPanel({
   );
 }
 
+function RegistryValueDetailsModal({
+  value,
+  onClose,
+}: {
+  value: RegistryValueItem;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4 py-6">
+      <div className="w-full max-w-3xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        <div className="border-b border-slate-100 px-5 py-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">
+                Detalhes do valor
+              </p>
+
+              <h3 className="mt-1 text-lg font-semibold text-slate-950">
+                {value.name || '(Padrão)'}
+              </h3>
+
+              <p className="mt-1 text-sm text-slate-500">{value.type}</p>
+            </div>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg px-2 py-1 text-sm font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+              aria-label="Fechar detalhes do valor"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <div className="max-h-[72vh] space-y-5 overflow-auto px-5 py-5">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Caminho
+            </p>
+            <pre className="mt-2 overflow-auto rounded-xl border border-slate-200 bg-slate-950 p-4 text-xs leading-relaxed text-slate-100">
+              {value.path}
+            </pre>
+          </div>
+
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Valor
+            </p>
+            <pre className="mt-2 max-h-[420px] overflow-auto whitespace-pre-wrap rounded-xl border border-slate-200 bg-slate-950 p-4 text-xs leading-relaxed text-slate-100">
+              {value.value || 'Não informado'}
+            </pre>
+          </div>
+        </div>
+
+        <div className="border-t border-slate-100 bg-slate-50 px-5 py-4 text-right">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+          >
+            Fechar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RegistryPanel({
+  currentPath,
+  keys,
+  values,
+  isLoading,
+  message,
+  lastUpdatedAt,
+  onNavigate,
+  onRefresh,
+}: {
+  currentPath: string;
+  keys: RegistryKeyItem[];
+  values: RegistryValueItem[];
+  isLoading: boolean;
+  message: string | null;
+  lastUpdatedAt: Date | null;
+  onNavigate: (path: string) => void;
+  onRefresh: () => void;
+}) {
+  const [pathInput, setPathInput] = useState(currentPath);
+  const [search, setSearch] = useState('');
+  const [selectedValue, setSelectedValue] = useState<RegistryValueItem | null>(
+    null,
+  );
+
+  useEffect(() => {
+    setPathInput(currentPath);
+  }, [currentPath]);
+
+  const normalizedSearch = search.trim().toLowerCase();
+
+  const filteredKeys = useMemo(() => {
+    if (!normalizedSearch) return keys;
+
+    return keys.filter((item) => {
+      return (
+        item.name.toLowerCase().includes(normalizedSearch) ||
+        item.path.toLowerCase().includes(normalizedSearch)
+      );
+    });
+  }, [keys, normalizedSearch]);
+
+  const filteredValues = useMemo(() => {
+    if (!normalizedSearch) return values;
+
+    return values.filter((item) => {
+      return (
+        item.name.toLowerCase().includes(normalizedSearch) ||
+        item.type.toLowerCase().includes(normalizedSearch) ||
+        item.value.toLowerCase().includes(normalizedSearch)
+      );
+    });
+  }, [values, normalizedSearch]);
+
+  const breadcrumbs = buildRegistryBreadcrumbs(currentPath);
+
+  function handleSubmitPath(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const nextPath = normalizeRegistryPath(pathInput);
+    onNavigate(nextPath);
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 xl:flex-row xl:items-center xl:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">
+            Registro do dispositivo
+          </h3>
+
+          <p className="mt-1 text-xs text-slate-600">
+            {keys.length} chaves • {values.length} valores
+            {lastUpdatedAt
+              ? ` • Última atualização: ${lastUpdatedAt.toLocaleTimeString()}`
+              : null}
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Buscar chave, nome, tipo ou valor..."
+            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 lg:w-80"
+          />
+
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={isLoading}
+            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isLoading ? 'Atualizando...' : 'Atualizar'}
+          </button>
+        </div>
+      </div>
+
+      <form
+        onSubmit={handleSubmitPath}
+        className="rounded-2xl border border-slate-200 bg-white p-4"
+      >
+        <label
+          htmlFor="registry-path"
+          className="text-xs font-semibold uppercase tracking-wide text-slate-500"
+        >
+          Caminho atual
+        </label>
+
+        <div className="mt-2 flex flex-col gap-2 lg:flex-row lg:items-center">
+          <input
+            id="registry-path"
+            value={pathInput}
+            onChange={(event) => setPathInput(event.target.value)}
+            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-800 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+          />
+
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="inline-flex items-center justify-center rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Abrir
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigate(getRegistryParentPath(currentPath))}
+            disabled={isLoading || normalizeRegistryPath(currentPath) === 'Computer'}
+            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Voltar
+          </button>
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-2 text-xs">
+          {breadcrumbs.map((item, index) => (
+            <button
+              key={`${item.path}-${index}`}
+              type="button"
+              onClick={() => onNavigate(item.path)}
+              className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-medium text-slate-600 transition hover:bg-brand-50 hover:text-brand-700"
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </form>
+
+      {message ? (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          {message}
+        </div>
+      ) : null}
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
+            <h4 className="text-sm font-semibold text-slate-900">Chaves</h4>
+          </div>
+
+          <div className="max-h-[620px] overflow-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="sticky top-0 z-10 bg-slate-50">
+                <tr>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                    Nome
+                  </th>
+                  <th className="px-4 py-3 text-right font-semibold text-slate-700">
+                    Ações
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {isLoading && keys.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={2}
+                      className="px-4 py-8 text-center text-slate-500"
+                    >
+                      Carregando chaves...
+                    </td>
+                  </tr>
+                ) : null}
+
+                {!isLoading && filteredKeys.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={2}
+                      className="px-4 py-8 text-center text-slate-500"
+                    >
+                      Nenhuma chave encontrada.
+                    </td>
+                  </tr>
+                ) : null}
+
+                {filteredKeys.map((item) => (
+                  <tr key={item.path} className="align-top">
+                    <td className="px-4 py-3">
+                      <p className="font-semibold text-slate-900">{item.name}</p>
+                      <p className="mt-1 break-all font-mono text-xs text-slate-500">
+                        {item.path}
+                      </p>
+                    </td>
+
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => onNavigate(item.path)}
+                        className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                      >
+                        Abrir
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
+            <h4 className="text-sm font-semibold text-slate-900">Valores</h4>
+          </div>
+
+          <div className="max-h-[620px] overflow-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="sticky top-0 z-10 bg-slate-50">
+                <tr>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                    Nome
+                  </th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                    Tipo
+                  </th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-700">
+                    Valor
+                  </th>
+                  <th className="px-4 py-3 text-right font-semibold text-slate-700">
+                    Ações
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {isLoading && values.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={4}
+                      className="px-4 py-8 text-center text-slate-500"
+                    >
+                      Carregando valores...
+                    </td>
+                  </tr>
+                ) : null}
+
+                {!isLoading && filteredValues.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={4}
+                      className="px-4 py-8 text-center text-slate-500"
+                    >
+                      Nenhum valor encontrado.
+                    </td>
+                  </tr>
+                ) : null}
+
+                {filteredValues.map((item) => (
+                  <tr key={`${item.path}-${item.name}`} className="align-top">
+                    <td className="max-w-xs px-4 py-3">
+                      <p className="break-all font-semibold text-slate-900">
+                        {item.name || '(Padrão)'}
+                      </p>
+                    </td>
+
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                      {item.type}
+                    </td>
+
+                    <td className="max-w-md px-4 py-3">
+                      <p className="break-all font-mono text-xs leading-relaxed text-slate-600">
+                        {truncateRegistryValue(item.value)}
+                      </p>
+                    </td>
+
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedValue(item)}
+                        className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                      >
+                        Detalhes
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {selectedValue ? (
+        <RegistryValueDetailsModal
+          value={selectedValue}
+          onClose={() => setSelectedValue(null)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+
 function EventLogPanel({
   events,
   isLoading,
@@ -1925,6 +2379,15 @@ export function RemoteBackgroundWorkspace({
   const [eventLogLastUpdatedAt, setEventLogLastUpdatedAt] =
     useState<Date | null>(null);
 
+  const [registryPath, setRegistryPath] = useState('Computer');
+  const [registryKeys, setRegistryKeys] = useState<RegistryKeyItem[]>([]);
+  const [registryValues, setRegistryValues] = useState<RegistryValueItem[]>([]);
+  const [isLoadingRegistry, setIsLoadingRegistry] = useState(false);
+  const [registryMessage, setRegistryMessage] = useState<string | null>(null);
+  const [hasLoadedRegistry, setHasLoadedRegistry] = useState(false);
+  const [registryLastUpdatedAt, setRegistryLastUpdatedAt] =
+    useState<Date | null>(null);
+
   const isLinuxDevice = isLinuxOperatingSystem(operatingSystem);
 
   const visibleTabs = useMemo(
@@ -2133,6 +2596,52 @@ export function RemoteBackgroundWorkspace({
     }
   }, [customerId, deviceId, selectedEventLog]);
 
+  const loadRegistry = useCallback(
+    async (pathOverride?: string) => {
+      const nextPath = normalizeRegistryPath(pathOverride ?? registryPath);
+
+      try {
+        setIsLoadingRegistry(true);
+        setRegistryMessage(null);
+
+        const response = await fetch(
+          `/api/devices/${encodeURIComponent(
+            deviceId,
+          )}/remote-background/registry?customerId=${encodeURIComponent(
+            customerId,
+          )}&path=${encodeURIComponent(nextPath)}&page=1&pageSize=400`,
+          {
+            method: 'GET',
+            cache: 'no-store',
+          },
+        );
+
+        const data = (await response.json()) as RegistryResponse;
+
+        if (!response.ok || !data.ok) {
+          throw new Error(
+            data.error ?? 'Não foi possível carregar o registro.',
+          );
+        }
+
+        setRegistryPath(data.path ?? nextPath);
+        setRegistryKeys(Array.isArray(data.keys) ? data.keys : []);
+        setRegistryValues(Array.isArray(data.values) ? data.values : []);
+        setHasLoadedRegistry(true);
+        setRegistryLastUpdatedAt(new Date());
+      } catch (error) {
+        setRegistryMessage(
+          error instanceof Error
+            ? error.message
+            : 'Erro ao carregar registro.',
+        );
+      } finally {
+        setIsLoadingRegistry(false);
+      }
+    },
+    [customerId, deviceId, registryPath],
+  );
+
   const runServiceAction = useCallback(
     async (
       service: ServiceItem,
@@ -2322,6 +2831,12 @@ export function RemoteBackgroundWorkspace({
     };
   }, [activeTab, eventLogAutoRefreshSeconds, loadEventLog]);
 
+  useEffect(() => {
+    if (activeTab === 'registry' && !hasLoadedRegistry) {
+      void loadRegistry();
+    }
+  }, [activeTab, hasLoadedRegistry, loadRegistry]);
+
 
 
   return (
@@ -2498,9 +3013,19 @@ export function RemoteBackgroundWorkspace({
           ) : null}
 
           {activeTab === 'registry' ? (
-            <PlaceholderPanel
-              title="Registry"
-              description="Próxima fase: navegação controlada do Registro do Windows, com foco em consulta e auditoria."
+            <RegistryPanel
+              currentPath={registryPath}
+              keys={registryKeys}
+              values={registryValues}
+              isLoading={isLoadingRegistry}
+              message={registryMessage}
+              lastUpdatedAt={registryLastUpdatedAt}
+              onNavigate={(nextPath) => {
+                void loadRegistry(nextPath);
+              }}
+              onRefresh={() => {
+                void loadRegistry();
+              }}
             />
           ) : null}
         </div>
