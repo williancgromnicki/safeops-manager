@@ -43,7 +43,7 @@ function getTrmmConfig() {
 
   if (!baseUrl || !apiKey) {
     throw new Error(
-      'Integração TRMM não configurada. Configure TRMM_API_URL e TRMM_API_KEY no ambiente.',,
+      'Integração TRMM não configurada. Configure TRMM_API_URL e TRMM_API_KEY no ambiente.',
     );
   }
 
