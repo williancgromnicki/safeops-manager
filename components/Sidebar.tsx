@@ -77,7 +77,6 @@ const ADMIN_NAV_ITEMS: NavItem[] = [
     href: '/admin/customers',
     label: 'Clientes e sites',
     preserveCustomer: true,
-    hidden: true,
     roles: ['admin'],
   },
   {
