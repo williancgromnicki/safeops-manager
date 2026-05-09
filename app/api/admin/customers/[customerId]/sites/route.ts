@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { createClient } from '@/lib/supabase/server';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
+import { createTrmmSite } from '@/lib/trmm/api';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,12 +16,16 @@ type CreateSitePayload = {
   name?: string;
   slug?: string;
   notes?: string;
-  tacticalSiteId?: string;
 };
 
 type AccessRow = {
   customer_id: string;
   role: string;
+};
+
+type CustomerRow = {
+  id: string;
+  tactical_client_id: string | null;
 };
 
 const operationalRoles = new Set(['admin', 'client']);
@@ -98,9 +103,24 @@ function canManageCustomer(input: {
 
   return input.accessRows.some(
     (row) =>
-      row.customer_id === input.customerId &&
-      operationalRoles.has(row.role),
+      row.customer_id === input.customerId && operationalRoles.has(row.role),
   );
+}
+
+async function getCustomer(customerId: string): Promise<CustomerRow | null> {
+  const supabaseAdmin = getSupabaseAdmin();
+
+  const { data, error } = await supabaseAdmin
+    .from('customers')
+    .select('id, tactical_client_id')
+    .eq('id', customerId)
+    .single();
+
+  if (error) {
+    throw new Error(`Erro ao localizar cliente: ${error.message}`);
+  }
+
+  return data as CustomerRow | null;
 }
 
 export async function POST(
@@ -127,7 +147,7 @@ export async function POST(
       return NextResponse.json(
         {
           ok: false,
-          error: 'Usuário sem permissão para criar sites neste cliente.',
+          error: 'Usuário sem permissão para criar grupos neste cliente.',
         },
         { status: 403 },
       );
@@ -141,7 +161,7 @@ export async function POST(
       return NextResponse.json(
         {
           ok: false,
-          error: 'Informe o nome do site.',
+          error: 'Informe o nome do grupo.',
         },
         { status: 400 },
       );
@@ -157,6 +177,25 @@ export async function POST(
       );
     }
 
+    const customer = await getCustomer(customerId);
+    const trmmClientId = Number(customer?.tactical_client_id);
+
+    if (!customer || !Number.isFinite(trmmClientId)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            'Este cliente não possui ID do TRMM vinculado. Sincronize ou recadastre o cliente antes de criar grupos.',
+        },
+        { status: 400 },
+      );
+    }
+
+    const trmmResult = await createTrmmSite({
+      clientId: trmmClientId,
+      siteName: name,
+    });
+
     const supabaseAdmin = getSupabaseAdmin();
 
     const { data, error } = await supabaseAdmin
@@ -165,7 +204,7 @@ export async function POST(
         customer_id: customerId,
         name,
         slug,
-        tactical_site_id: cleanString(payload.tacticalSiteId),
+        tactical_site_id: String(trmmResult.siteId),
         notes: cleanString(payload.notes),
         is_active: true,
       })
@@ -173,20 +212,20 @@ export async function POST(
       .single();
 
     if (error) {
-      throw new Error(`Erro ao criar site: ${error.message}`);
+      throw new Error(`Grupo criado no TRMM, mas falhou ao salvar no SafeOps: ${error.message}`);
     }
 
     return NextResponse.json({
       ok: true,
       siteId: data.id,
-      message: 'Site criado com sucesso.',
+      message: 'Grupo criado com sucesso.',
     });
   } catch (error) {
     return NextResponse.json(
       {
         ok: false,
         error:
-          error instanceof Error ? error.message : 'Erro interno ao criar site.',
+          error instanceof Error ? error.message : 'Erro interno ao criar grupo.',
       },
       { status: 500 },
     );

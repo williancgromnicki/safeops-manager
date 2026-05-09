@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { createClient } from '@/lib/supabase/server';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
+import { createTrmmClientWithSite } from '@/lib/trmm/api';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,11 +15,6 @@ type CreateCustomerPayload = {
   name?: string;
   slug?: string;
   notes?: string;
-  tacticalClientId?: string;
-  windowsAgentUrl?: string;
-  linuxAgentUrl?: string;
-  macosAgentUrl?: string;
-  createDefaultSite?: boolean;
   defaultSiteName?: string;
 };
 
@@ -71,7 +67,7 @@ function tableDoesNotExist(errorMessage: string): boolean {
 
   return (
     normalized.includes('could not find the table') ||
-    normalized.includes('relation') && normalized.includes('does not exist') ||
+    (normalized.includes('relation') && normalized.includes('does not exist')) ||
     normalized.includes('schema cache')
   );
 }
@@ -166,30 +162,6 @@ async function listSitesForCustomers(customerIds: string[]): Promise<SiteRow[]> 
   }
 
   return (data ?? []) as unknown as SiteRow[];
-}
-
-async function tryCreateDefaultSite(input: {
-  customerId: string;
-  name: string;
-}) {
-  const supabaseAdmin = getSupabaseAdmin();
-
-  const { error } = await supabaseAdmin.from('sites').insert({
-    customer_id: input.customerId,
-    name: input.name,
-    slug: slugify(input.name),
-    is_active: true,
-  });
-
-  if (error && !tableDoesNotExist(error.message)) {
-    throw new Error(
-      `Cliente criado, mas falhou ao criar unidade padrão: ${error.message}`,
-    );
-  }
-
-  if (error && tableDoesNotExist(error.message)) {
-    console.warn('Tabela sites ainda não existe. Cliente criado sem unidade padrão.');
-  }
 }
 
 export async function GET() {
@@ -301,18 +273,26 @@ export async function POST(request: NextRequest) {
     const payload = (await request.json()) as CreateCustomerPayload;
 
     const name = cleanString(payload.name);
+    const defaultSiteName = cleanString(payload.defaultSiteName);
     const slug = slugify(cleanString(payload.slug) ?? name ?? '');
     const notes = cleanString(payload.notes);
-    const tacticalClientId = cleanString(payload.tacticalClientId);
-    const windowsAgentUrl = cleanString(payload.windowsAgentUrl);
-    const linuxAgentUrl = cleanString(payload.linuxAgentUrl);
-    const macosAgentUrl = cleanString(payload.macosAgentUrl);
 
     if (!name) {
       return NextResponse.json(
         {
           ok: false,
           error: 'Informe o nome do cliente.',
+        },
+        { status: 400 },
+      );
+    }
+
+    if (!defaultSiteName) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            'Todo cliente precisa ter pelo menos um grupo inicial para organizar seus dispositivos.',
         },
         { status: 400 },
       );
@@ -328,6 +308,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const trmmResult = await createTrmmClientWithSite({
+      clientName: name,
+      siteName: defaultSiteName,
+    });
+
     const supabaseAdmin = getSupabaseAdmin();
 
     const { data: customer, error: insertCustomerError } = await supabaseAdmin
@@ -335,17 +320,26 @@ export async function POST(request: NextRequest) {
       .insert({
         name,
         slug,
-        tactical_client_id: tacticalClientId,
-        trmm_windows_agent_url: windowsAgentUrl,
-        trmm_linux_agent_url: linuxAgentUrl,
-        trmm_macos_agent_url: macosAgentUrl,
+        tactical_client_id: String(trmmResult.clientId),
         notes,
       })
       .select('id, name, slug')
       .single();
 
     if (insertCustomerError) {
-      throw new Error(`Erro ao criar cliente: ${insertCustomerError.message}`);
+      throw new Error(`Cliente criado no TRMM, mas falhou ao salvar no SafeOps: ${insertCustomerError.message}`);
+    }
+
+    const { error: siteError } = await supabaseAdmin.from('sites').insert({
+      customer_id: customer.id,
+      name: defaultSiteName,
+      slug: slugify(defaultSiteName),
+      tactical_site_id: String(trmmResult.siteId),
+      is_active: true,
+    });
+
+    if (siteError && !tableDoesNotExist(siteError.message)) {
+      throw new Error(`Cliente criado, mas falhou ao criar grupo no SafeOps: ${siteError.message}`);
     }
 
     const { error: accessError } = await supabaseAdmin
@@ -367,20 +361,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const createDefaultSite = payload.createDefaultSite !== false;
-    const defaultSiteName = cleanString(payload.defaultSiteName) ?? 'Matriz';
-
-    if (createDefaultSite) {
-      await tryCreateDefaultSite({
-        customerId: customer.id,
-        name: defaultSiteName,
-      });
-    }
-
     return NextResponse.json({
       ok: true,
       customerId: customer.id,
-      message: 'Cliente criado com sucesso.',
+      message: 'Cliente e grupo inicial criados com sucesso.',
     });
   } catch (error) {
     const message =

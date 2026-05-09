@@ -1,0 +1,26 @@
+No arquivo components/Sidebar.tsx, NÃO substitua o arquivo inteiro.
+
+Faça apenas esta alteração no item /admin/customers:
+
+Antes:
+{
+  href: '/admin/customers',
+  label: 'Clientes e sites',
+  preserveCustomer: true,
+  hidden: true,
+  roles: ['admin'],
+},
+
+Depois:
+{
+  href: '/admin/customers',
+  label: 'Clientes e grupos',
+  preserveCustomer: true,
+  roles: ['admin'],
+},
+
+Ou seja:
+1. Remova a linha: hidden: true,
+2. Altere o label de "Clientes e sites" para "Clientes e grupos".
+
+Isso reativa a tela no menu sem mexer no restante do Sidebar.

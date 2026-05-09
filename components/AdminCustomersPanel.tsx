@@ -48,8 +48,11 @@ type StatusMessage = {
 const inputClassName =
   'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20';
 
-const buttonClassName =
+const primaryButtonClassName =
   'inline-flex items-center justify-center rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-60';
+
+const secondaryButtonClassName =
+  'inline-flex items-center justify-center rounded-lg border border-brand-200 bg-white px-4 py-2 text-sm font-semibold text-brand-900 shadow-sm transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-60';
 
 function FieldLabel({
   label,
@@ -109,7 +112,7 @@ async function parseApiResponse(
     };
   }
 
-  if (!response.ok) {
+  if (!response.ok || !data.ok) {
     return {
       ok: false,
       error: data.error ?? 'Erro ao executar operação.',
@@ -136,49 +139,23 @@ export function AdminCustomersPanel() {
 
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
-  const [selectedSiteId, setSelectedSiteId] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isCreatingCustomer, setIsCreatingCustomer] = useState(false);
-  const [isSavingCustomer, setIsSavingCustomer] = useState(false);
   const [isCreatingSite, setIsCreatingSite] = useState(false);
-  const [isSavingSite, setIsSavingSite] = useState(false);
   const [status, setStatus] = useState<StatusMessage>(null);
 
   const [newCustomerName, setNewCustomerName] = useState('');
   const [newCustomerSlug, setNewCustomerSlug] = useState('');
   const [newCustomerNotes, setNewCustomerNotes] = useState('');
   const [newDefaultSiteName, setNewDefaultSiteName] = useState('Matriz');
-  const [createDefaultSite, setCreateDefaultSite] = useState(true);
-
-  const [editCustomerName, setEditCustomerName] = useState('');
-  const [editCustomerSlug, setEditCustomerSlug] = useState('');
-  const [editCustomerNotes, setEditCustomerNotes] = useState('');
-  const [editTacticalClientId, setEditTacticalClientId] = useState('');
-  const [editWindowsAgentUrl, setEditWindowsAgentUrl] = useState('');
-  const [editLinuxAgentUrl, setEditLinuxAgentUrl] = useState('');
-  const [editMacosAgentUrl, setEditMacosAgentUrl] = useState('');
-  const [editCustomerActive, setEditCustomerActive] = useState(true);
 
   const [newSiteName, setNewSiteName] = useState('');
   const [newSiteSlug, setNewSiteSlug] = useState('');
   const [newSiteNotes, setNewSiteNotes] = useState('');
-  const [newTacticalSiteId, setNewTacticalSiteId] = useState('');
-
-  const [editSiteName, setEditSiteName] = useState('');
-  const [editSiteSlug, setEditSiteSlug] = useState('');
-  const [editSiteNotes, setEditSiteNotes] = useState('');
-  const [editTacticalSiteId, setEditTacticalSiteId] = useState('');
-  const [editSiteActive, setEditSiteActive] = useState(true);
 
   const selectedCustomer = useMemo(() => {
     return customers.find((customer) => customer.id === selectedCustomerId) ?? null;
   }, [customers, selectedCustomerId]);
-
-  const selectedSite = useMemo(() => {
-    return (
-      selectedCustomer?.sites?.find((site) => site.id === selectedSiteId) ?? null
-    );
-  }, [selectedCustomer, selectedSiteId]);
 
   async function loadCustomers() {
     try {
@@ -205,13 +182,6 @@ export function AdminCustomersPanel() {
         null;
 
       setSelectedCustomerId(nextSelectedCustomer?.id ?? '');
-
-      const nextSelectedSite =
-        nextSelectedCustomer?.sites?.find((site) => site.id === selectedSiteId) ??
-        nextSelectedCustomer?.sites?.[0] ??
-        null;
-
-      setSelectedSiteId(nextSelectedSite?.id ?? '');
     } catch (error) {
       setStatus({
         type: 'error',
@@ -230,48 +200,20 @@ export function AdminCustomersPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    if (!selectedCustomer) {
-      setEditCustomerName('');
-      setEditCustomerSlug('');
-      setEditCustomerNotes('');
-      setEditTacticalClientId('');
-      setEditWindowsAgentUrl('');
-      setEditLinuxAgentUrl('');
-      setEditMacosAgentUrl('');
-      setEditCustomerActive(true);
-      return;
-    }
-
-    setEditCustomerName(selectedCustomer.name);
-    setEditCustomerSlug(selectedCustomer.slug);
-    setEditCustomerNotes(selectedCustomer.notes ?? '');
-    setEditTacticalClientId(selectedCustomer.tactical_client_id ?? '');
-    setEditWindowsAgentUrl(selectedCustomer.trmm_windows_agent_url ?? '');
-    setEditLinuxAgentUrl(selectedCustomer.trmm_linux_agent_url ?? '');
-    setEditMacosAgentUrl(selectedCustomer.trmm_macos_agent_url ?? '');
-    setEditCustomerActive(selectedCustomer.is_active !== false);
-  }, [selectedCustomer]);
-
-  useEffect(() => {
-    if (!selectedSite) {
-      setEditSiteName('');
-      setEditSiteSlug('');
-      setEditSiteNotes('');
-      setEditTacticalSiteId('');
-      setEditSiteActive(true);
-      return;
-    }
-
-    setEditSiteName(selectedSite.name);
-    setEditSiteSlug(selectedSite.slug);
-    setEditSiteNotes(selectedSite.notes ?? '');
-    setEditTacticalSiteId(selectedSite.tactical_site_id ?? '');
-    setEditSiteActive(selectedSite.is_active !== false);
-  }, [selectedSite]);
-
   async function handleCreateCustomer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    const customerName = newCustomerName.trim();
+    const siteName = newDefaultSiteName.trim();
+
+    if (!customerName || !siteName) {
+      setStatus({
+        type: 'error',
+        message:
+          'Todo cliente precisa ter pelo menos um grupo inicial para organizar seus dispositivos.',
+      });
+      return;
+    }
 
     try {
       setIsCreatingCustomer(true);
@@ -284,11 +226,10 @@ export function AdminCustomersPanel() {
         },
         cache: 'no-store',
         body: JSON.stringify({
-          name: newCustomerName,
-          slug: newCustomerSlug || slugify(newCustomerName),
+          name: customerName,
+          slug: newCustomerSlug || slugify(customerName),
           notes: newCustomerNotes,
-          createDefaultSite,
-          defaultSiteName: newDefaultSiteName,
+          defaultSiteName: siteName,
         }),
       });
 
@@ -300,14 +241,13 @@ export function AdminCustomersPanel() {
 
       setStatus({
         type: 'success',
-        message: data.message ?? 'Cliente criado com sucesso.',
+        message: data.message ?? 'Cliente e grupo inicial criados com sucesso.',
       });
 
       setNewCustomerName('');
       setNewCustomerSlug('');
       setNewCustomerNotes('');
       setNewDefaultSiteName('Matriz');
-      setCreateDefaultSite(true);
 
       await loadCustomers();
       router.refresh();
@@ -322,69 +262,23 @@ export function AdminCustomersPanel() {
     }
   }
 
-  async function handleSaveCustomer(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!selectedCustomer) {
-      return;
-    }
-
-    try {
-      setIsSavingCustomer(true);
-      setStatus(null);
-
-      const response = await fetch(
-        `/api/admin/customers/${encodeURIComponent(selectedCustomer.id)}`,
-        {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          cache: 'no-store',
-          body: JSON.stringify({
-            name: editCustomerName,
-            slug: editCustomerSlug,
-            notes: editCustomerNotes,
-            tacticalClientId: editTacticalClientId,
-            windowsAgentUrl: editWindowsAgentUrl,
-            linuxAgentUrl: editLinuxAgentUrl,
-            macosAgentUrl: editMacosAgentUrl,
-            isActive: editCustomerActive,
-          }),
-        },
-      );
-
-      const data = await parseApiResponse(response);
-
-      if (!data.ok) {
-        throw new Error(data.error ?? 'Erro ao atualizar cliente.');
-      }
-
-      setStatus({
-        type: 'success',
-        message: data.message ?? 'Cliente atualizado com sucesso.',
-      });
-
-      await loadCustomers();
-      router.refresh();
-    } catch (error) {
-      setStatus({
-        type: 'error',
-        message:
-          error instanceof Error ? error.message : 'Erro ao atualizar cliente.',
-      });
-    } finally {
-      setIsSavingCustomer(false);
-    }
-  }
-
   async function handleCreateSite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!selectedCustomer) {
       setStatus({
         type: 'error',
-        message: 'Selecione um cliente antes de criar o site.',
+        message: 'Selecione um cliente antes de criar o grupo.',
+      });
+      return;
+    }
+
+    const siteName = newSiteName.trim();
+
+    if (!siteName) {
+      setStatus({
+        type: 'error',
+        message: 'Informe o nome do grupo.',
       });
       return;
     }
@@ -402,10 +296,9 @@ export function AdminCustomersPanel() {
           },
           cache: 'no-store',
           body: JSON.stringify({
-            name: newSiteName,
-            slug: newSiteSlug || slugify(newSiteName),
+            name: siteName,
+            slug: newSiteSlug || slugify(siteName),
             notes: newSiteNotes,
-            tacticalSiteId: newTacticalSiteId,
           }),
         },
       );
@@ -413,82 +306,27 @@ export function AdminCustomersPanel() {
       const data = await parseApiResponse(response);
 
       if (!data.ok) {
-        throw new Error(data.error ?? 'Erro ao criar site.');
+        throw new Error(data.error ?? 'Erro ao criar grupo.');
       }
 
       setStatus({
         type: 'success',
-        message: data.message ?? 'Site criado com sucesso.',
+        message: data.message ?? 'Grupo criado com sucesso.',
       });
 
       setNewSiteName('');
       setNewSiteSlug('');
       setNewSiteNotes('');
-      setNewTacticalSiteId('');
 
       await loadCustomers();
       router.refresh();
     } catch (error) {
       setStatus({
         type: 'error',
-        message: error instanceof Error ? error.message : 'Erro ao criar site.',
+        message: error instanceof Error ? error.message : 'Erro ao criar grupo.',
       });
     } finally {
       setIsCreatingSite(false);
-    }
-  }
-
-  async function handleSaveSite(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!selectedCustomer || !selectedSite) {
-      return;
-    }
-
-    try {
-      setIsSavingSite(true);
-      setStatus(null);
-
-      const response = await fetch(
-        `/api/admin/sites/${encodeURIComponent(selectedSite.id)}`,
-        {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          cache: 'no-store',
-          body: JSON.stringify({
-            customerId: selectedCustomer.id,
-            name: editSiteName,
-            slug: editSiteSlug,
-            notes: editSiteNotes,
-            tacticalSiteId: editTacticalSiteId,
-            isActive: editSiteActive,
-          }),
-        },
-      );
-
-      const data = await parseApiResponse(response);
-
-      if (!data.ok) {
-        throw new Error(data.error ?? 'Erro ao atualizar site.');
-      }
-
-      setStatus({
-        type: 'success',
-        message: data.message ?? 'Site atualizado com sucesso.',
-      });
-
-      await loadCustomers();
-      router.refresh();
-    } catch (error) {
-      setStatus({
-        type: 'error',
-        message:
-          error instanceof Error ? error.message : 'Erro ao atualizar site.',
-      });
-    } finally {
-      setIsSavingSite(false);
     }
   }
 
@@ -497,9 +335,10 @@ export function AdminCustomersPanel() {
       <StatusAlert status={status} />
 
       <div className="rounded-2xl border border-surface-border bg-white p-5 shadow-sm">
-        <h2 className="section-title">Clientes e sites</h2>
+        <h2 className="section-title">Clientes e grupos</h2>
         <p className="mt-2 text-sm text-slate-600">
-          Cadastre e organize os clientes e suas unidades no SafeOps Manager.
+          Cadastre clientes e organize suas unidades/filiais em grupos. No TRMM,
+          cada grupo é criado como um site vinculado ao cliente.
         </p>
       </div>
 
@@ -524,7 +363,17 @@ export function AdminCustomersPanel() {
               />
             </FieldLabel>
 
-            <FieldLabel label="Slug">
+            <FieldLabel label="Primeiro grupo">
+              <input
+                className={inputClassName}
+                value={newDefaultSiteName}
+                onChange={(event) => setNewDefaultSiteName(event.target.value)}
+                placeholder="Matriz"
+                required
+              />
+            </FieldLabel>
+
+            <FieldLabel label="Slug do cliente">
               <input
                 className={inputClassName}
                 value={newCustomerSlug}
@@ -544,31 +393,9 @@ export function AdminCustomersPanel() {
               />
             </FieldLabel>
 
-            <label className="flex items-start gap-2 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                checked={createDefaultSite}
-                onChange={(event) => setCreateDefaultSite(event.target.checked)}
-                className="mt-1"
-              />
-              <span>Criar site padrão junto com o cliente</span>
-            </label>
-
-            {createDefaultSite ? (
-              <FieldLabel label="Nome do site padrão">
-                <input
-                  className={inputClassName}
-                  value={newDefaultSiteName}
-                  onChange={(event) => setNewDefaultSiteName(event.target.value)}
-                  placeholder="Matriz"
-                  required
-                />
-              </FieldLabel>
-            ) : null}
-
             <button
               type="submit"
-              className={buttonClassName}
+              className={primaryButtonClassName}
               disabled={isCreatingCustomer}
             >
               {isCreatingCustomer ? 'Criando...' : 'Criar cliente'}
@@ -591,18 +418,11 @@ export function AdminCustomersPanel() {
                 <select
                   className={inputClassName}
                   value={selectedCustomerId}
-                  onChange={(event) => {
-                    setSelectedCustomerId(event.target.value);
-                    const customer = customers.find(
-                      (item) => item.id === event.target.value,
-                    );
-                    setSelectedSiteId(customer?.sites?.[0]?.id ?? '');
-                  }}
+                  onChange={(event) => setSelectedCustomerId(event.target.value)}
                 >
                   {customers.map((customer) => (
                     <option key={customer.id} value={customer.id}>
                       {customer.name}
-                      {customer.is_active ? '' : ' — inativo'}
                     </option>
                   ))}
                 </select>
@@ -617,7 +437,13 @@ export function AdminCustomersPanel() {
                 </p>
                 <p className="mt-1">
                   <span className="font-semibold text-slate-900">
-                    Sites:
+                    ID TRMM:
+                  </span>{' '}
+                  {selectedCustomer.tactical_client_id ?? 'Não vinculado'}
+                </p>
+                <p className="mt-1">
+                  <span className="font-semibold text-slate-900">
+                    Grupos:
                   </span>{' '}
                   {selectedCustomer.sites?.length ?? 0}
                 </p>
@@ -636,264 +462,87 @@ export function AdminCustomersPanel() {
       {selectedCustomer ? (
         <div className="grid gap-6 xl:grid-cols-2">
           <form
-            onSubmit={handleSaveCustomer}
+            onSubmit={handleCreateSite}
             className="rounded-2xl border border-surface-border bg-white p-5 shadow-sm"
           >
-            <h3 className="section-title">Editar cliente</h3>
+            <h3 className="section-title">Criar grupo adicional</h3>
 
             <div className="mt-5 space-y-4">
-              <FieldLabel label="Nome">
+              <FieldLabel label="Nome do grupo">
                 <input
                   className={inputClassName}
-                  value={editCustomerName}
-                  onChange={(event) => setEditCustomerName(event.target.value)}
+                  value={newSiteName}
+                  onChange={(event) => {
+                    setNewSiteName(event.target.value);
+                    setNewSiteSlug(slugify(event.target.value));
+                  }}
+                  placeholder="Matriz, Filial 01, Datacenter..."
                   required
                 />
               </FieldLabel>
 
-              <FieldLabel label="Slug">
+              <FieldLabel label="Slug do grupo">
                 <input
                   className={inputClassName}
-                  value={editCustomerSlug}
-                  onChange={(event) => setEditCustomerSlug(event.target.value)}
+                  value={newSiteSlug}
+                  onChange={(event) => setNewSiteSlug(event.target.value)}
                   required
-                />
-              </FieldLabel>
-
-              <FieldLabel label="Referência externa do cliente">
-                <input
-                  className={inputClassName}
-                  value={editTacticalClientId}
-                  onChange={(event) =>
-                    setEditTacticalClientId(event.target.value)
-                  }
-                  placeholder="ID externo do cliente"
-                />
-              </FieldLabel>
-
-              <FieldLabel label="Instalador Windows">
-                <input
-                  className={inputClassName}
-                  value={editWindowsAgentUrl}
-                  onChange={(event) =>
-                    setEditWindowsAgentUrl(event.target.value)
-                  }
-                  placeholder="URL do instalador Windows"
-                />
-              </FieldLabel>
-
-              <FieldLabel label="Instalador Linux">
-                <input
-                  className={inputClassName}
-                  value={editLinuxAgentUrl}
-                  onChange={(event) =>
-                    setEditLinuxAgentUrl(event.target.value)
-                  }
-                  placeholder="URL do instalador Linux"
-                />
-              </FieldLabel>
-
-              <FieldLabel label="Instalador macOS">
-                <input
-                  className={inputClassName}
-                  value={editMacosAgentUrl}
-                  onChange={(event) =>
-                    setEditMacosAgentUrl(event.target.value)
-                  }
-                  placeholder="URL do instalador macOS"
                 />
               </FieldLabel>
 
               <FieldLabel label="Observações">
                 <textarea
                   className={inputClassName}
-                  value={editCustomerNotes}
-                  onChange={(event) =>
-                    setEditCustomerNotes(event.target.value)
-                  }
+                  value={newSiteNotes}
+                  onChange={(event) => setNewSiteNotes(event.target.value)}
                   rows={3}
                 />
               </FieldLabel>
 
-              <label className="flex items-start gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={editCustomerActive}
-                  onChange={(event) =>
-                    setEditCustomerActive(event.target.checked)
-                  }
-                  className="mt-1"
-                />
-                <span>Cliente ativo</span>
-              </label>
-
               <button
                 type="submit"
-                className={buttonClassName}
-                disabled={isSavingCustomer}
+                className={secondaryButtonClassName}
+                disabled={isCreatingSite}
               >
-                {isSavingCustomer ? 'Salvando...' : 'Salvar cliente'}
+                {isCreatingSite ? 'Criando...' : 'Criar grupo'}
               </button>
             </div>
           </form>
 
-          <div className="space-y-6">
-            <form
-              onSubmit={handleCreateSite}
-              className="rounded-2xl border border-surface-border bg-white p-5 shadow-sm"
-            >
-              <h3 className="section-title">Criar site</h3>
+          <div className="rounded-2xl border border-surface-border bg-white p-5 shadow-sm">
+            <h3 className="section-title">Grupos do cliente</h3>
 
-              <div className="mt-5 space-y-4">
-                <FieldLabel label="Nome do site">
-                  <input
-                    className={inputClassName}
-                    value={newSiteName}
-                    onChange={(event) => {
-                      setNewSiteName(event.target.value);
-                      setNewSiteSlug(slugify(event.target.value));
-                    }}
-                    placeholder="Matriz, Filial 01, Datacenter..."
-                    required
-                  />
-                </FieldLabel>
-
-                <FieldLabel label="Slug">
-                  <input
-                    className={inputClassName}
-                    value={newSiteSlug}
-                    onChange={(event) => setNewSiteSlug(event.target.value)}
-                    required
-                  />
-                </FieldLabel>
-
-                <FieldLabel label="Referência externa do site">
-                  <input
-                    className={inputClassName}
-                    value={newTacticalSiteId}
-                    onChange={(event) =>
-                      setNewTacticalSiteId(event.target.value)
-                    }
-                    placeholder="ID externo do site"
-                  />
-                </FieldLabel>
-
-                <FieldLabel label="Observações">
-                  <textarea
-                    className={inputClassName}
-                    value={newSiteNotes}
-                    onChange={(event) => setNewSiteNotes(event.target.value)}
-                    rows={3}
-                  />
-                </FieldLabel>
-
-                <button
-                  type="submit"
-                  className={buttonClassName}
-                  disabled={isCreatingSite}
-                >
-                  {isCreatingSite ? 'Criando...' : 'Criar site'}
-                </button>
-              </div>
-            </form>
-
-            <div className="rounded-2xl border border-surface-border bg-white p-5 shadow-sm">
-              <h3 className="section-title">Sites do cliente</h3>
-
-              <div className="mt-5 space-y-4">
-                {(selectedCustomer.sites?.length ?? 0) === 0 ? (
-                  <p className="rounded-xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">
-                    Nenhum site cadastrado para este cliente.
-                  </p>
-                ) : (
-                  <FieldLabel label="Site selecionado">
-                    <select
-                      className={inputClassName}
-                      value={selectedSiteId}
-                      onChange={(event) => setSelectedSiteId(event.target.value)}
-                    >
-                      {selectedCustomer.sites?.map((site) => (
-                        <option key={site.id} value={site.id}>
-                          {site.name}
-                          {site.is_active ? '' : ' — inativo'}
-                        </option>
-                      ))}
-                    </select>
-                  </FieldLabel>
-                )}
-
-                {selectedSite ? (
-                  <form onSubmit={handleSaveSite} className="space-y-4">
-                    <FieldLabel label="Nome">
-                      <input
-                        className={inputClassName}
-                        value={editSiteName}
-                        onChange={(event) =>
-                          setEditSiteName(event.target.value)
-                        }
-                        required
-                      />
-                    </FieldLabel>
-
-                    <FieldLabel label="Slug">
-                      <input
-                        className={inputClassName}
-                        value={editSiteSlug}
-                        onChange={(event) =>
-                          setEditSiteSlug(event.target.value)
-                        }
-                        required
-                      />
-                    </FieldLabel>
-
-                    <FieldLabel label="Referência externa do site">
-                      <input
-                        className={inputClassName}
-                        value={editTacticalSiteId}
-                        onChange={(event) =>
-                          setEditTacticalSiteId(event.target.value)
-                        }
-                      />
-                    </FieldLabel>
-
-                    <FieldLabel label="Observações">
-                      <textarea
-                        className={inputClassName}
-                        value={editSiteNotes}
-                        onChange={(event) =>
-                          setEditSiteNotes(event.target.value)
-                        }
-                        rows={3}
-                      />
-                    </FieldLabel>
-
-                    <label className="flex items-start gap-2 text-sm text-slate-700">
-                      <input
-                        type="checkbox"
-                        checked={editSiteActive}
-                        onChange={(event) =>
-                          setEditSiteActive(event.target.checked)
-                        }
-                        className="mt-1"
-                      />
-                      <span>Site ativo</span>
-                    </label>
-
-                    <button
-                      type="submit"
-                      className={buttonClassName}
-                      disabled={isSavingSite}
-                    >
-                      {isSavingSite ? 'Salvando...' : 'Salvar site'}
-                    </button>
-                  </form>
-                ) : null}
-              </div>
+            <div className="mt-5 space-y-3">
+              {(selectedCustomer.sites?.length ?? 0) === 0 ? (
+                <p className="rounded-xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">
+                  Nenhum grupo cadastrado para este cliente.
+                </p>
+              ) : (
+                selectedCustomer.sites?.map((site) => (
+                  <div
+                    key={site.id}
+                    className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600"
+                  >
+                    <p className="font-semibold text-brand-900">{site.name}</p>
+                    <p className="mt-1">
+                      <span className="font-semibold text-slate-900">
+                        Slug:
+                      </span>{' '}
+                      {site.slug}
+                    </p>
+                    <p className="mt-1">
+                      <span className="font-semibold text-slate-900">
+                        ID TRMM:
+                      </span>{' '}
+                      {site.tactical_site_id ?? 'Não vinculado'}
+                    </p>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
       ) : null}
-
     </div>
   );
 }

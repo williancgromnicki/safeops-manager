@@ -1,13 +1,12 @@
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
-import { DataTable } from '@/components/DataTable';
-import { DevicePlatformIcon } from '@/components/DevicePlatformIcon';
+import { DevicesTableWithGroups } from '@/components/DevicesTableWithGroups';
 import { EmptyState } from '@/components/EmptyState';
 import { RefreshDevicesButton } from '@/components/RefreshDevicesButton';
 import { resolveCurrentCustomer } from '@/lib/data/get-current-customer';
 import { getDevices, type DeviceListItem } from '@/lib/data/get-devices';
-import { DEMO_DEVICES, type OperationalStatus } from '@/lib/demo-data';
+import { getSitesForCustomer } from '@/lib/data/get-sites';
+import { DEMO_DEVICES } from '@/lib/demo-data';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,50 +15,6 @@ type DevicesPageProps = {
     customerId?: string;
   }>;
 };
-
-const statusLabel: Record<OperationalStatus, string> = {
-  online: 'Online',
-  offline: 'Offline',
-  attention: 'Atenção',
-  unknown: 'Desconhecido',
-};
-
-const statusClassName: Record<OperationalStatus, string> = {
-  online: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
-  offline: 'bg-rose-50 text-rose-700 ring-rose-600/20',
-  attention: 'bg-amber-50 text-amber-700 ring-amber-600/20',
-  unknown: 'bg-slate-50 text-slate-700 ring-slate-600/20',
-};
-
-function StatusBadge({ status }: { status: OperationalStatus }) {
-  return (
-    <span
-      className={[
-        'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset',
-        statusClassName[status],
-      ].join(' ')}
-    >
-      {statusLabel[status]}
-    </span>
-  );
-}
-
-function formatHardwareSummary(
-  ramGb?: number | null,
-  diskTotalGb?: number | null,
-): string {
-  const parts: string[] = [];
-
-  if (ramGb) {
-    parts.push(`${ramGb} GB RAM`);
-  }
-
-  if (diskTotalGb) {
-    parts.push(`${diskTotalGb} GB disco`);
-  }
-
-  return parts.length > 0 ? parts.join(' • ') : 'Hardware não informado';
-}
 
 function mapDemoDeviceToListItem(
   device: (typeof DEMO_DEVICES)[number],
@@ -114,7 +69,11 @@ export default async function DevicesPage({ searchParams }: DevicesPageProps) {
 
   const isDemoCustomer = activeCustomer.customerSlug === 'safesys-demo';
 
-  const realDevices = await getDevices(activeCustomer.customerId);
+  const [realDevices, sites] = await Promise.all([
+    getDevices(activeCustomer.customerId),
+    getSitesForCustomer(activeCustomer.customerId),
+  ]);
+
   const list: DeviceListItem[] =
     isDemoCustomer && realDevices.length === 0
       ? DEMO_DEVICES.map(mapDemoDeviceToListItem)
@@ -129,11 +88,14 @@ export default async function DevicesPage({ searchParams }: DevicesPageProps) {
           </h2>
 
           <p className="mt-2 text-sm text-slate-600">
-            Inventário operacional sincronizado com os agentes SafeOps. O status online/offline considera o último check-in registrado pelo dispositivo..
+            Inventário operacional sincronizado com os agentes SafeOps. O status
+            online/offline considera o último check-in registrado pelo
+            dispositivo.
           </p>
 
           <p className="mt-1 text-xs text-slate-500">
-            A sincronização automática ocorre periodicamente. O botão ao lado permite solicitar uma atualização manual do inventário.
+            A sincronização automática ocorre periodicamente. O botão ao lado
+            permite solicitar uma atualização manual do inventário.
           </p>
         </div>
 
@@ -143,75 +105,24 @@ export default async function DevicesPage({ searchParams }: DevicesPageProps) {
       </div>
 
       {list.length === 0 ? (
-        <EmptyState
-          title="Nenhum dispositivo registrado"
-          description="Quando dispositivos forem cadastrados ou sincronizados para este cliente, eles aparecerão nesta listagem."
-        />
+        <div className="space-y-4">
+          <DevicesTableWithGroups
+            customerId={activeCustomer.customerId}
+            devices={[]}
+            sites={sites}
+          />
+
+          <EmptyState
+            title="Nenhum dispositivo registrado"
+            description="Quando dispositivos forem cadastrados ou sincronizados para este cliente, eles aparecerão nesta listagem."
+          />
+        </div>
       ) : (
-        <DataTable
-          columns={[
-            'Dispositivo',
-            'Local',
-            'Status',
-            'Sistema operacional',
-            'Hardware',
-            'Último check-in',
-            'Alertas ativos',
-          ]}
-        >
-          {list.map((device) => {
-            const href = `/devices/${encodeURIComponent(
-              device.id,
-            )}?customerId=${encodeURIComponent(activeCustomer.customerId)}`;
-
-            const deviceSubtitle =
-              device.manufacturer || device.model
-                ? [device.manufacturer, device.model].filter(Boolean).join(' • ')
-                : device.operatingSystem || 'Sistema não identificado';
-
-            return (
-              <tr key={device.id} className="text-slate-700">
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    <DevicePlatformIcon
-                      operatingSystem={device.operatingSystem}
-                      deviceName={device.name}
-                    />
-
-                    <div>
-                      <Link
-                        href={href}
-                        className="font-semibold text-brand-900 transition hover:text-brand-700 hover:underline"
-                      >
-                        {device.name}
-                      </Link>
-
-                      <p className="text-xs text-slate-500">
-                        {deviceSubtitle}
-                      </p>
-                    </div>
-                  </div>
-                </td>
-
-                <td className="px-4 py-3">{device.site}</td>
-
-                <td className="px-4 py-3">
-                  <StatusBadge status={device.status} />
-                </td>
-
-                <td className="px-4 py-3">{device.operatingSystem}</td>
-
-                <td className="px-4 py-3 text-sm">
-                  {formatHardwareSummary(device.ramGb, device.diskTotalGb)}
-                </td>
-
-                <td className="px-4 py-3">{device.lastSeen}</td>
-
-                <td className="px-4 py-3">{device.activeAlerts}</td>
-              </tr>
-            );
-          })}
-        </DataTable>
+        <DevicesTableWithGroups
+          customerId={activeCustomer.customerId}
+          devices={list}
+          sites={sites}
+        />
       )}
     </section>
   );
