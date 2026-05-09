@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { createClient } from '@/lib/supabase/server';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
+import { deleteTrmmClient, updateTrmmClientName } from '@/lib/trmm/api';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,15 +16,19 @@ type UpdateCustomerPayload = {
   name?: string;
   slug?: string;
   notes?: string;
-  tacticalClientId?: string;
-  windowsAgentUrl?: string;
-  linuxAgentUrl?: string;
-  macosAgentUrl?: string;
 };
 
 type AccessRow = {
   customer_id: string;
   role: string;
+};
+
+type CustomerRow = {
+  id: string;
+  name: string;
+  slug: string;
+  tactical_client_id: string | null;
+  notes: string | null;
 };
 
 function cleanString(value?: string | null): string | null {
@@ -101,6 +106,24 @@ async function assertSafesysAdmin(userId: string) {
   }
 }
 
+async function getCustomer(customerId: string): Promise<CustomerRow> {
+  const supabaseAdmin = getSupabaseAdmin();
+
+  const { data, error } = await supabaseAdmin
+    .from('customers')
+    .select('id, name, slug, tactical_client_id, notes')
+    .eq('id', customerId)
+    .single();
+
+  if (error || !data) {
+    throw new Error(
+      `Cliente não encontrado no SafeOps: ${error?.message ?? customerId}`,
+    );
+  }
+
+  return data as CustomerRow;
+}
+
 export async function PATCH(
   request: NextRequest,
   context: CustomerRouteContext,
@@ -150,6 +173,16 @@ export async function PATCH(
       );
     }
 
+    const currentCustomer = await getCustomer(customerId);
+    const trmmClientId = Number(currentCustomer.tactical_client_id);
+
+    if (Number.isFinite(trmmClientId)) {
+      await updateTrmmClientName({
+        clientId: trmmClientId,
+        clientName: name,
+      });
+    }
+
     const supabaseAdmin = getSupabaseAdmin();
 
     const { error } = await supabaseAdmin
@@ -157,10 +190,6 @@ export async function PATCH(
       .update({
         name,
         slug,
-        tactical_client_id: cleanString(payload.tacticalClientId),
-        trmm_windows_agent_url: cleanString(payload.windowsAgentUrl),
-        trmm_linux_agent_url: cleanString(payload.linuxAgentUrl),
-        trmm_macos_agent_url: cleanString(payload.macosAgentUrl),
         notes: cleanString(payload.notes),
       })
       .eq('id', customerId);
@@ -182,6 +211,81 @@ export async function PATCH(
         {
           ok: false,
           error: 'Usuário sem permissão para atualizar clientes.',
+        },
+        { status: 403 },
+      );
+    }
+
+    return NextResponse.json(
+      {
+        ok: false,
+        error: message,
+      },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(
+  _request: NextRequest,
+  context: CustomerRouteContext,
+) {
+  try {
+    const user = await getAuthenticatedUser();
+
+    if (!user) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'Usuário não autenticado.',
+        },
+        { status: 401 },
+      );
+    }
+
+    await assertSafesysAdmin(user.id);
+
+    const { customerId } = await context.params;
+    const currentCustomer = await getCustomer(customerId);
+    const trmmClientId = Number(currentCustomer.tactical_client_id);
+
+    if (Number.isFinite(trmmClientId)) {
+      await deleteTrmmClient({
+        clientId: trmmClientId,
+      });
+    }
+
+    const supabaseAdmin = getSupabaseAdmin();
+
+    // Limpamos relacionamentos locais antes de excluir o cliente para evitar FK sem cascade.
+    await supabaseAdmin.from('sites').delete().eq('customer_id', customerId);
+    await supabaseAdmin
+      .from('user_customer_access')
+      .delete()
+      .eq('customer_id', customerId);
+
+    const { error } = await supabaseAdmin
+      .from('customers')
+      .delete()
+      .eq('id', customerId);
+
+    if (error) {
+      throw new Error(`Erro ao remover cliente no SafeOps: ${error.message}`);
+    }
+
+    return NextResponse.json({
+      ok: true,
+      message: 'Cliente removido com sucesso.',
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : 'Erro interno ao remover cliente.';
+
+    if (message === 'Forbidden') {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'Usuário sem permissão para remover clientes.',
         },
         { status: 403 },
       );
