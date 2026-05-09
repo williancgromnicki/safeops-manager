@@ -149,7 +149,6 @@ export async function createTrmmClientWithSite(input: {
     }),
   });
 
-  // A API do TRMM retorna somente uma mensagem textual. Buscamos novamente para localizar os IDs criados.
   await new Promise((resolve) => setTimeout(resolve, 800));
 
   const clients = await fetchTrmmClients();
@@ -201,7 +200,6 @@ export async function createTrmmSite(input: {
     }),
   });
 
-  // A API do TRMM retorna somente uma mensagem textual. Buscamos novamente para localizar o ID criado.
   await new Promise((resolve) => setTimeout(resolve, 800));
 
   const clients = await fetchTrmmClients();
@@ -224,4 +222,53 @@ export async function createTrmmSite(input: {
   return {
     siteId: createdSite.id,
   };
+}
+
+export async function updateTrmmClientName(input: {
+  clientId: number;
+  clientName: string;
+}) {
+  const clientName = input.clientName.trim();
+
+  if (!Number.isFinite(input.clientId)) {
+    throw new Error('ID do cliente TRMM inválido.');
+  }
+
+  if (!clientName) {
+    throw new Error('Informe o nome do cliente.');
+  }
+
+  const clients = await fetchTrmmClients();
+  const currentClient = clients.find((client) => client.id === input.clientId);
+
+  if (!currentClient) {
+    throw new Error(`Cliente TRMM ${input.clientId} não encontrado.`);
+  }
+
+  await fetchTrmmApi<string>(`/clients/${input.clientId}/`, {
+    method: 'PUT',
+    parseAsText: true,
+    body: JSON.stringify({
+      client: {
+        ...currentClient,
+        name: clientName,
+        sites: [],
+      },
+      site: {
+        name: '',
+      },
+      custom_fields: currentClient.custom_fields ?? [],
+    }),
+  });
+}
+
+export async function deleteTrmmClient(input: { clientId: number }) {
+  if (!Number.isFinite(input.clientId)) {
+    throw new Error('ID do cliente TRMM inválido.');
+  }
+
+  await fetchTrmmApi<string>(`/clients/${input.clientId}/`, {
+    method: 'DELETE',
+    parseAsText: true,
+  });
 }
