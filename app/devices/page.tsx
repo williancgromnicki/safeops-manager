@@ -2,7 +2,6 @@ import { redirect } from 'next/navigation';
 
 import { DevicesTableWithGroups } from '@/components/DevicesTableWithGroups';
 import { EmptyState } from '@/components/EmptyState';
-import { RefreshDevicesButton } from '@/components/RefreshDevicesButton';
 import { resolveCurrentCustomer } from '@/lib/data/get-current-customer';
 import { getDevices, type DeviceListItem } from '@/lib/data/get-devices';
 import { getSitesForCustomer } from '@/lib/data/get-sites';
@@ -81,27 +80,20 @@ export default async function DevicesPage({ searchParams }: DevicesPageProps) {
 
   return (
     <section className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <h2 className="section-title">
-            Dispositivos - {activeCustomer.customerName}
-          </h2>
+      <div>
+        <h2 className="section-title">
+          Dispositivos - {activeCustomer.customerName}
+        </h2>
 
-          <p className="mt-2 text-sm text-slate-600">
-            Inventário operacional sincronizado com os agentes SafeOps. O status
-            online/offline considera o último check-in registrado pelo
-            dispositivo.
-          </p>
+        <p className="mt-2 text-sm text-slate-600">
+          Inventário operacional sincronizado com os agentes SafeOps. O status
+          online/offline considera o último check-in registrado pelo dispositivo.
+        </p>
 
-          <p className="mt-1 text-xs text-slate-500">
-            A sincronização automática ocorre periodicamente. O botão ao lado
-            permite solicitar uma atualização manual do inventário.
-          </p>
-        </div>
-
-        <div className="shrink-0">
-          <RefreshDevicesButton />
-        </div>
+        <p className="mt-1 text-xs text-slate-500">
+          A sincronização automática ocorre periodicamente. O botão de atualização
+          na barra de grupos solicita uma sincronização manual com o TRMM.
+        </p>
       </div>
 
       {list.length === 0 ? (

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 
 import { DataTable } from '@/components/DataTable';
 import { DevicePlatformIcon } from '@/components/DevicePlatformIcon';
+import { RefreshDevicesButton } from '@/components/RefreshDevicesButton';
 import type { CustomerSiteListItem } from '@/lib/data/get-sites';
 import type { DeviceListItem } from '@/lib/data/get-devices';
 import type { OperationalStatus } from '@/lib/demo-data';
@@ -223,13 +224,17 @@ export function DevicesTableWithGroups({
           </select>
         </label>
 
-        <button
-          type="button"
-          onClick={() => setIsModalOpen(true)}
-          className="inline-flex items-center justify-center rounded-lg border border-brand-200 bg-white px-4 py-2 text-sm font-semibold text-brand-900 shadow-sm transition hover:bg-brand-50"
-        >
-          Criar grupo
-        </button>
+        <div className="flex items-center gap-2">
+          <RefreshDevicesButton iconOnly />
+
+          <button
+            type="button"
+            onClick={() => setIsModalOpen(true)}
+            className="inline-flex h-10 items-center justify-center rounded-lg border border-brand-200 bg-white px-4 text-sm font-semibold text-brand-900 shadow-sm transition hover:bg-brand-50"
+          >
+            Criar grupo
+          </button>
+        </div>
       </div>
 
       <DataTable

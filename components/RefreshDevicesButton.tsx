@@ -3,6 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+type RefreshDevicesButtonProps = {
+  iconOnly?: boolean;
+};
+
 function RefreshIcon({ spinning = false }: { spinning?: boolean }) {
   return (
     <svg
@@ -38,10 +42,12 @@ function getErrorMessage(error: unknown): string {
     return error;
   }
 
-  return "Erro desconhecido ao atualizar inventário.";
+  return "Erro desconhecido ao sincronizar dados.";
 }
 
-export function RefreshDevicesButton() {
+export function RefreshDevicesButton({
+  iconOnly = false,
+}: RefreshDevicesButtonProps) {
   const router = useRouter();
 
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -64,12 +70,12 @@ export function RefreshDevicesButton() {
 
       if (!response.ok || !data.ok) {
         throw new Error(
-          data?.error || "Não foi possível atualizar o inventário.",
+          data?.error || "Não foi possível sincronizar os dados.",
         );
       }
 
       setLastRefresh(new Date());
-      setMessage("Inventário atualizado com sucesso.");
+      setMessage("Sincronização solicitada com sucesso.");
 
       router.refresh();
     } catch (error: unknown) {
@@ -86,14 +92,19 @@ export function RefreshDevicesButton() {
         type="button"
         onClick={handleRefresh}
         disabled={isRefreshing}
-        className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+        title="Sincronizar dados com o TRMM"
+        aria-label="Sincronizar dados com o TRMM"
+        className={[
+          "inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60",
+          iconOnly ? "h-10 w-10 px-0 py-0" : "px-3 py-2",
+        ].join(" ")}
       >
         <RefreshIcon spinning={isRefreshing} />
 
-        {isRefreshing ? "Atualizando..." : "Atualizar agora"}
+        {iconOnly ? null : isRefreshing ? "Atualizando..." : "Atualizar agora"}
       </button>
 
-      {message && (
+      {message && !iconOnly ? (
         <span
           className={`text-xs ${
             hasError ? "text-red-600" : "text-emerald-600"
@@ -101,9 +112,9 @@ export function RefreshDevicesButton() {
         >
           {message}
         </span>
-      )}
+      ) : null}
 
-      {lastRefresh && !hasError && (
+      {lastRefresh && !hasError && !iconOnly ? (
         <span className="text-xs text-slate-500">
           Última atualização manual às{" "}
           {lastRefresh.toLocaleTimeString("pt-BR", {
@@ -112,7 +123,7 @@ export function RefreshDevicesButton() {
             second: "2-digit",
           })}
         </span>
-      )}
+      ) : null}
     </div>
   );
 }
