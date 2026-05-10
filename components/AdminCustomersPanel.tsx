@@ -148,6 +148,7 @@ export function AdminCustomersPanel() {
   const [isSavingCustomer, setIsSavingCustomer] = useState(false);
   const [isRemovingCustomer, setIsRemovingCustomer] = useState(false);
   const [status, setStatus] = useState<StatusMessage>(null);
+  const [removeModalError, setRemoveModalError] = useState<string | null>(null);
 
   const [newCustomerName, setNewCustomerName] = useState('');
   const [newCustomerSlug, setNewCustomerSlug] = useState('');
@@ -327,11 +328,13 @@ export function AdminCustomersPanel() {
   function openRemoveModal(customer: CustomerRow) {
     setRemovingCustomer(customer);
     setDeleteConfirmation('');
+    setRemoveModalError(null);
   }
 
   function closeRemoveModal() {
     setRemovingCustomer(null);
     setDeleteConfirmation('');
+    setRemoveModalError(null);
   }
 
   async function handleRemoveCustomer() {
@@ -340,16 +343,15 @@ export function AdminCustomersPanel() {
     }
 
     if (deleteConfirmation !== removingCustomer.name) {
-      setStatus({
-        type: 'error',
-        message:
-          'Para remover o cliente, digite exatamente o nome dele no campo de confirmação.',
-      });
+      setRemoveModalError(
+        'Para remover o cliente, digite exatamente o nome dele no campo de confirmação.',
+      );
       return;
     }
 
     try {
       setIsRemovingCustomer(true);
+      setRemoveModalError(null);
       setStatus(null);
 
       const response = await fetch(
@@ -375,11 +377,9 @@ export function AdminCustomersPanel() {
       await loadCustomers();
       router.refresh();
     } catch (error) {
-      setStatus({
-        type: 'error',
-        message:
-          error instanceof Error ? error.message : 'Erro ao remover cliente.',
-      });
+      setRemoveModalError(
+        error instanceof Error ? error.message : 'Erro ao remover cliente.',
+      );
     } finally {
       setIsRemovingCustomer(false);
     }
@@ -636,6 +636,13 @@ export function AdminCustomersPanel() {
               teste ou quando tiver certeza.
             </p>
 
+            {removeModalError ? (
+              <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm leading-relaxed text-rose-800">
+                <p className="font-semibold">Não foi possível remover agora.</p>
+                <p className="mt-1">{removeModalError}</p>
+              </div>
+            ) : null}
+
             <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
               Para confirmar, digite exatamente:
               <strong className="ml-1">{removingCustomer.name}</strong>
@@ -648,7 +655,10 @@ export function AdminCustomersPanel() {
               <input
                 className={inputClassName}
                 value={deleteConfirmation}
-                onChange={(event) => setDeleteConfirmation(event.target.value)}
+                onChange={(event) => {
+                  setDeleteConfirmation(event.target.value);
+                  setRemoveModalError(null);
+                }}
                 placeholder={removingCustomer.name}
               />
             </label>
