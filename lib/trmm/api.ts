@@ -53,6 +53,10 @@ function getTrmmConfig() {
   };
 }
 
+function normalizeName(value: string): string {
+  return value.trim().toLowerCase();
+}
+
 async function readResponseBody(response: Response): Promise<string> {
   try {
     return await response.text();
@@ -118,6 +122,38 @@ export async function fetchTrmmClients(): Promise<TrmmClient[]> {
   }));
 }
 
+export async function findTrmmClientByIdOrName(input: {
+  clientId?: number | null;
+  clientName?: string | null;
+}): Promise<TrmmClient | null> {
+  const clients = await fetchTrmmClients();
+  const numericClientId =
+    typeof input.clientId === 'number' && Number.isFinite(input.clientId)
+      ? input.clientId
+      : null;
+
+  if (numericClientId && numericClientId > 0) {
+    const byId = clients.find((client) => client.id === numericClientId);
+
+    if (byId) {
+      return byId;
+    }
+  }
+
+  const clientName = input.clientName?.trim();
+
+  if (!clientName) {
+    return null;
+  }
+
+  const normalizedClientName = normalizeName(clientName);
+
+  return (
+    clients.find((client) => normalizeName(client.name) === normalizedClientName) ??
+    null
+  );
+}
+
 export async function createTrmmClientWithSite(input: {
   clientName: string;
   siteName: string;
@@ -151,8 +187,9 @@ export async function createTrmmClientWithSite(input: {
 
   await new Promise((resolve) => setTimeout(resolve, 800));
 
-  const clients = await fetchTrmmClients();
-  const createdClient = clients.find((client) => client.name === clientName);
+  const createdClient = await findTrmmClientByIdOrName({
+    clientName,
+  });
 
   if (!createdClient) {
     throw new Error(
@@ -180,7 +217,7 @@ export async function createTrmmSite(input: {
 }): Promise<{ siteId: number }> {
   const siteName = input.siteName.trim();
 
-  if (!Number.isFinite(input.clientId)) {
+  if (!Number.isFinite(input.clientId) || input.clientId <= 0) {
     throw new Error('ID do cliente TRMM inválido.');
   }
 
@@ -202,8 +239,9 @@ export async function createTrmmSite(input: {
 
   await new Promise((resolve) => setTimeout(resolve, 800));
 
-  const clients = await fetchTrmmClients();
-  const client = clients.find((item) => item.id === input.clientId);
+  const client = await findTrmmClientByIdOrName({
+    clientId: input.clientId,
+  });
 
   if (!client) {
     throw new Error(
@@ -225,33 +263,34 @@ export async function createTrmmSite(input: {
 }
 
 export async function updateTrmmClientName(input: {
-  clientId: number;
-  clientName: string;
-}) {
-  const clientName = input.clientName.trim();
+  clientId?: number | null;
+  currentClientName: string;
+  newClientName: string;
+}): Promise<{ resolvedClientId: number }> {
+  const newClientName = input.newClientName.trim();
 
-  if (!Number.isFinite(input.clientId)) {
-    throw new Error('ID do cliente TRMM inválido.');
-  }
-
-  if (!clientName) {
+  if (!newClientName) {
     throw new Error('Informe o nome do cliente.');
   }
 
-  const clients = await fetchTrmmClients();
-  const currentClient = clients.find((client) => client.id === input.clientId);
+  const currentClient = await findTrmmClientByIdOrName({
+    clientId: input.clientId ?? null,
+    clientName: input.currentClientName,
+  });
 
   if (!currentClient) {
-    throw new Error(`Cliente TRMM ${input.clientId} não encontrado.`);
+    throw new Error(
+      `Cliente TRMM "${input.currentClientName}" não encontrado. Verifique se o cliente existe no TRMM e se o ID local está sincronizado.`,
+    );
   }
 
-  await fetchTrmmApi<string>(`/clients/${input.clientId}/`, {
+  await fetchTrmmApi<string>(`/clients/${currentClient.id}/`, {
     method: 'PUT',
     parseAsText: true,
     body: JSON.stringify({
       client: {
         ...currentClient,
-        name: clientName,
+        name: newClientName,
         sites: [],
       },
       site: {
@@ -260,15 +299,33 @@ export async function updateTrmmClientName(input: {
       custom_fields: currentClient.custom_fields ?? [],
     }),
   });
+
+  return {
+    resolvedClientId: currentClient.id,
+  };
 }
 
-export async function deleteTrmmClient(input: { clientId: number }) {
-  if (!Number.isFinite(input.clientId)) {
-    throw new Error('ID do cliente TRMM inválido.');
+export async function deleteTrmmClient(input: {
+  clientId?: number | null;
+  currentClientName: string;
+}): Promise<{ resolvedClientId: number }> {
+  const currentClient = await findTrmmClientByIdOrName({
+    clientId: input.clientId ?? null,
+    clientName: input.currentClientName,
+  });
+
+  if (!currentClient) {
+    throw new Error(
+      `Cliente TRMM "${input.currentClientName}" não encontrado. Verifique se o cliente ainda existe no TRMM e se o ID local está sincronizado.`,
+    );
   }
 
-  await fetchTrmmApi<string>(`/clients/${input.clientId}/`, {
+  await fetchTrmmApi<string>(`/clients/${currentClient.id}/`, {
     method: 'DELETE',
     parseAsText: true,
   });
+
+  return {
+    resolvedClientId: currentClient.id,
+  };
 }
