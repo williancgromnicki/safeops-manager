@@ -61,6 +61,16 @@ function slugify(value: string): string {
     .slice(0, 80);
 }
 
+function isClientWithAgentsError(message: string): boolean {
+  const normalized = message.toLowerCase();
+
+  return (
+    normalized.includes('agents exist under this client') ||
+    normalized.includes('site specified to move existing agents') ||
+    normalized.includes('move existing agents')
+  );
+}
+
 async function getAuthenticatedUser() {
   const supabase = await createClient();
 
@@ -302,10 +312,10 @@ export async function DELETE(
       message: 'Cliente removido com sucesso.',
     });
   } catch (error) {
-    const message =
+    const rawMessage =
       error instanceof Error ? error.message : 'Erro interno ao remover cliente.';
 
-    if (message === 'Forbidden') {
+    if (rawMessage === 'Forbidden') {
       return NextResponse.json(
         {
           ok: false,
@@ -315,10 +325,21 @@ export async function DELETE(
       );
     }
 
+    if (isClientWithAgentsError(rawMessage)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            'Este cliente possui agentes ativos no TRMM. Remova primeiro os agentes/dispositivos vinculados a este cliente pela tela de Dispositivos e depois tente remover o cliente novamente.',
+        },
+        { status: 400 },
+      );
+    }
+
     return NextResponse.json(
       {
         ok: false,
-        error: message,
+        error: rawMessage,
       },
       { status: 500 },
     );

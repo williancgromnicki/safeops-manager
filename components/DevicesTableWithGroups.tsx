@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { DataTable } from '@/components/DataTable';
@@ -50,6 +50,14 @@ function StatusBadge({ status }: { status: OperationalStatus }) {
   );
 }
 
+function MoreIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+      <path d="M6 10a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM12 10a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM18 10a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z" />
+    </svg>
+  );
+}
+
 function formatHardwareSummary(
   ramGb?: number | null,
   diskTotalGb?: number | null,
@@ -89,6 +97,184 @@ async function parseApiResponse(response: Response): Promise<ApiResponse> {
 
 function normalize(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function DeviceRowActions({
+  device,
+  customerId,
+  onMessage,
+}: {
+  device: DeviceListItem;
+  customerId: string;
+  onMessage: (message: { type: 'success' | 'error'; message: string }) => void;
+}) {
+  const router = useRouter();
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+
+  const [isOpen, setIsOpen] = useState(false);
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        wrapperRef.current &&
+        !wrapperRef.current.contains(event.target as Node)
+      ) {
+        setIsOpen(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  async function handleDeleteAgent() {
+    if (deleteConfirmation !== device.name) {
+      onMessage({
+        type: 'error',
+        message:
+          'Para remover o agente, digite exatamente o nome do dispositivo.',
+      });
+      return;
+    }
+
+    try {
+      setIsDeleting(true);
+
+      const response = await fetch(
+        `/api/admin/devices/${encodeURIComponent(
+          device.id,
+        )}?customerId=${encodeURIComponent(customerId)}`,
+        {
+          method: 'DELETE',
+          cache: 'no-store',
+        },
+      );
+
+      const data = await parseApiResponse(response);
+
+      if (!data.ok) {
+        throw new Error(data.error ?? 'Erro ao remover agente.');
+      }
+
+      onMessage({
+        type: 'success',
+        message: data.message ?? 'Agente removido com sucesso.',
+      });
+
+      setIsConfirmingDelete(false);
+      setDeleteConfirmation('');
+      router.refresh();
+    } catch (error) {
+      onMessage({
+        type: 'error',
+        message:
+          error instanceof Error ? error.message : 'Erro ao remover agente.',
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
+  return (
+    <>
+      <div ref={wrapperRef} className="relative flex justify-end">
+        <button
+          type="button"
+          onClick={() => setIsOpen((current) => !current)}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
+          aria-label={`Ações de ${device.name}`}
+          title="Ações"
+        >
+          <MoreIcon />
+        </button>
+
+        {isOpen ? (
+          <div className="absolute right-0 z-30 mt-10 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
+            <div className="border-b border-slate-100 px-4 py-3">
+              <p className="text-sm font-semibold text-slate-900">
+                Ações do agente
+              </p>
+              <p className="mt-1 text-xs text-slate-500">{device.name}</p>
+            </div>
+
+            <div className="p-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOpen(false);
+                  setIsConfirmingDelete(true);
+                }}
+                className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm font-medium text-rose-700 transition hover:bg-rose-50"
+              >
+                Deletar agente
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      {isConfirmingDelete ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-rose-700">
+              Deletar agente
+            </h3>
+
+            <p className="mt-2 text-sm text-slate-600">
+              Esta ação remove o agente do TRMM e limpa o registro local do
+              SafeOps. Use somente quando tiver certeza de que o dispositivo não
+              deve mais ser monitorado.
+            </p>
+
+            <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+              Para confirmar, digite exatamente:
+              <strong className="ml-1">{device.name}</strong>
+            </div>
+
+            <label className="mt-5 block space-y-1">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Confirmação
+              </span>
+              <input
+                value={deleteConfirmation}
+                onChange={(event) => setDeleteConfirmation(event.target.value)}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+                placeholder={device.name}
+              />
+            </label>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsConfirmingDelete(false);
+                  setDeleteConfirmation('');
+                }}
+                className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDeleteAgent}
+                disabled={isDeleting || deleteConfirmation !== device.name}
+                className="inline-flex items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 shadow-sm transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isDeleting ? 'Removendo...' : 'Deletar agente'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
 }
 
 export function DevicesTableWithGroups({
@@ -246,6 +432,7 @@ export function DevicesTableWithGroups({
           'Hardware',
           'Último check-in',
           'Alertas ativos',
+          'Ações',
         ]}
       >
         {filteredDevices.map((device) => {
@@ -295,6 +482,14 @@ export function DevicesTableWithGroups({
               <td className="px-4 py-3">{device.lastSeen}</td>
 
               <td className="px-4 py-3">{device.activeAlerts}</td>
+
+              <td className="px-4 py-3">
+                <DeviceRowActions
+                  device={device}
+                  customerId={customerId}
+                  onMessage={setStatusMessage}
+                />
+              </td>
             </tr>
           );
         })}

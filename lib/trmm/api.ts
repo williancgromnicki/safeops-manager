@@ -37,6 +37,17 @@ export type TrmmClient = {
   custom_fields?: unknown[];
 };
 
+export type TrmmAgent = {
+  agent_id: string;
+  hostname: string;
+  client?: string;
+  client_name?: string;
+  site_name?: string;
+  site?: number;
+  operating_system?: string;
+  status?: string;
+};
+
 function getTrmmConfig() {
   const baseUrl = process.env.TRMM_API_URL;
   const apiKey = process.env.TRMM_API_KEY;
@@ -327,5 +338,92 @@ export async function deleteTrmmClient(input: {
 
   return {
     resolvedClientId: currentClient.id,
+  };
+}
+
+export async function fetchTrmmAgents(): Promise<TrmmAgent[]> {
+  return fetchTrmmApi<TrmmAgent[]>('/agents/', {
+    method: 'GET',
+  });
+}
+
+export async function findTrmmAgentByIdOrHostname(input: {
+  agentId?: string | null;
+  hostname?: string | null;
+  clientName?: string | null;
+  siteName?: string | null;
+}): Promise<TrmmAgent | null> {
+  const agents = await fetchTrmmAgents();
+
+  const agentId = input.agentId?.trim();
+
+  if (agentId) {
+    const byId = agents.find((agent) => agent.agent_id === agentId);
+
+    if (byId) {
+      return byId;
+    }
+  }
+
+  const hostname = input.hostname?.trim();
+
+  if (!hostname) {
+    return null;
+  }
+
+  const normalizedHostname = normalizeName(hostname);
+  const normalizedClientName = input.clientName
+    ? normalizeName(input.clientName)
+    : null;
+  const normalizedSiteName = input.siteName ? normalizeName(input.siteName) : null;
+
+  const candidates = agents.filter(
+    (agent) => normalizeName(agent.hostname ?? '') === normalizedHostname,
+  );
+
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  if (candidates.length === 1) {
+    return candidates[0];
+  }
+
+  const scopedCandidate = candidates.find((agent) => {
+    const clientMatches =
+      !normalizedClientName ||
+      normalizeName(agent.client_name ?? agent.client ?? '') ===
+        normalizedClientName;
+
+    const siteMatches =
+      !normalizedSiteName ||
+      normalizeName(agent.site_name ?? '') === normalizedSiteName;
+
+    return clientMatches && siteMatches;
+  });
+
+  return scopedCandidate ?? candidates[0];
+}
+
+export async function deleteTrmmAgent(input: {
+  agentId?: string | null;
+  hostname?: string | null;
+  clientName?: string | null;
+  siteName?: string | null;
+}): Promise<{ resolvedAgentId: string }> {
+  const agent = await findTrmmAgentByIdOrHostname(input);
+
+  if (!agent) {
+    throw new Error(
+      `Agente TRMM "${input.hostname ?? input.agentId ?? 'desconhecido'}" não encontrado.`,
+    );
+  }
+
+  await fetchTrmmApi<void>(`/agents/${agent.agent_id}/`, {
+    method: 'DELETE',
+  });
+
+  return {
+    resolvedAgentId: agent.agent_id,
   };
 }
