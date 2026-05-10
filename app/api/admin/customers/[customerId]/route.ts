@@ -41,6 +41,16 @@ function normalizeRole(role?: string | null): string {
   return cleanString(role)?.toLowerCase() ?? '';
 }
 
+function parseTrmmClientId(value?: string | null): number | null {
+  const numeric = Number(value);
+
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return null;
+  }
+
+  return numeric;
+}
+
 function slugify(value: string): string {
   return value
     .normalize('NFD')
@@ -124,6 +134,20 @@ async function getCustomer(customerId: string): Promise<CustomerRow> {
   return data as CustomerRow;
 }
 
+async function updateLocalTrmmClientId(input: {
+  customerId: string;
+  resolvedClientId: number;
+}) {
+  const supabaseAdmin = getSupabaseAdmin();
+
+  await supabaseAdmin
+    .from('customers')
+    .update({
+      tactical_client_id: String(input.resolvedClientId),
+    })
+    .eq('id', input.customerId);
+}
+
 export async function PATCH(
   request: NextRequest,
   context: CustomerRouteContext,
@@ -174,14 +198,11 @@ export async function PATCH(
     }
 
     const currentCustomer = await getCustomer(customerId);
-    const trmmClientId = Number(currentCustomer.tactical_client_id);
-
-    if (Number.isFinite(trmmClientId)) {
-      await updateTrmmClientName({
-        clientId: trmmClientId,
-        clientName: name,
-      });
-    }
+    const trmmResult = await updateTrmmClientName({
+      clientId: parseTrmmClientId(currentCustomer.tactical_client_id),
+      currentClientName: currentCustomer.name,
+      newClientName: name,
+    });
 
     const supabaseAdmin = getSupabaseAdmin();
 
@@ -191,6 +212,7 @@ export async function PATCH(
         name,
         slug,
         notes: cleanString(payload.notes),
+        tactical_client_id: String(trmmResult.resolvedClientId),
       })
       .eq('id', customerId);
 
@@ -247,17 +269,19 @@ export async function DELETE(
 
     const { customerId } = await context.params;
     const currentCustomer = await getCustomer(customerId);
-    const trmmClientId = Number(currentCustomer.tactical_client_id);
 
-    if (Number.isFinite(trmmClientId)) {
-      await deleteTrmmClient({
-        clientId: trmmClientId,
-      });
-    }
+    const trmmResult = await deleteTrmmClient({
+      clientId: parseTrmmClientId(currentCustomer.tactical_client_id),
+      currentClientName: currentCustomer.name,
+    });
+
+    await updateLocalTrmmClientId({
+      customerId,
+      resolvedClientId: trmmResult.resolvedClientId,
+    });
 
     const supabaseAdmin = getSupabaseAdmin();
 
-    // Limpamos relacionamentos locais antes de excluir o cliente para evitar FK sem cascade.
     await supabaseAdmin.from('sites').delete().eq('customer_id', customerId);
     await supabaseAdmin
       .from('user_customer_access')
