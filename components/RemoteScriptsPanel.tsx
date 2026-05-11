@@ -4,7 +4,21 @@ import type { FormEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-type RemoteScript = {
+type TrmmScript = {
+  id: number;
+  name: string;
+  description?: string | null;
+  script_type?: string | null;
+  shell?: string | null;
+  category?: string | null;
+  default_timeout?: number | null;
+  filename?: string | null;
+  hidden?: boolean;
+  supported_platforms?: string[];
+  run_as_user?: boolean;
+};
+
+type LocalScript = {
   id: string;
   customer_id: string | null;
   scope: 'safesys' | 'customer';
@@ -18,11 +32,37 @@ type RemoteScript = {
   updated_at: string | null;
 };
 
-type ScriptsApiResponse = {
+type Device = {
+  id: string;
+  name: string;
+  site: string;
+  status: string;
+};
+
+type ApiResponse = {
   ok: boolean;
   error?: string;
   message?: string;
-  scripts?: RemoteScript[];
+  scripts?: TrmmScript[];
+  result?: {
+    stdout?: string;
+    stderr?: string;
+    retcode?: number;
+    execution_time?: number;
+  };
+};
+
+type LocalScriptsApiResponse = {
+  ok: boolean;
+  error?: string;
+  message?: string;
+  scripts?: LocalScript[];
+};
+
+type DevicesApiResponse = {
+  ok: boolean;
+  error?: string;
+  devices?: Device[];
 };
 
 type StatusMessage = {
@@ -79,32 +119,6 @@ function StatusAlert({ status }: { status: StatusMessage }) {
   );
 }
 
-function statusLabel(status: RemoteScript['status']): string {
-  const labels: Record<RemoteScript['status'], string> = {
-    approved: 'Aprovado',
-    pending_review: 'Pendente de revisão',
-    disabled: 'Desativado',
-  };
-
-  return labels[status] ?? status;
-}
-
-function statusClassName(status: RemoteScript['status']): string {
-  if (status === 'approved') {
-    return 'bg-emerald-50 text-emerald-700 ring-emerald-600/20';
-  }
-
-  if (status === 'pending_review') {
-    return 'bg-amber-50 text-amber-700 ring-amber-600/20';
-  }
-
-  return 'bg-slate-50 text-slate-700 ring-slate-600/20';
-}
-
-function scopeLabel(scope: RemoteScript['scope']): string {
-  return scope === 'safesys' ? 'Biblioteca Safesys' : 'Script do cliente';
-}
-
 function formatDate(value?: string | null): string {
   if (!value) {
     return '—';
@@ -119,9 +133,43 @@ function formatDate(value?: string | null): string {
   return date.toLocaleString('pt-BR');
 }
 
-async function parseApiResponse(response: Response): Promise<ScriptsApiResponse> {
+function formatPlatforms(platforms?: string[]): string {
+  if (!platforms?.length) {
+    return 'Todas';
+  }
+
+  return platforms.join(', ');
+}
+
+function cleanShell(shell?: string | null): string {
+  return shell?.trim() || 'powershell';
+}
+
+async function parseApiResponse(response: Response): Promise<ApiResponse> {
+  const data = (await response.json().catch(() => null)) as ApiResponse | null;
+
+  if (!data) {
+    return {
+      ok: false,
+      error: 'Resposta inválida da API.',
+    };
+  }
+
+  if (!response.ok || !data.ok) {
+    return {
+      ok: false,
+      error: data.error ?? 'Erro ao executar operação.',
+    };
+  }
+
+  return data;
+}
+
+async function parseLocalScriptsResponse(
+  response: Response,
+): Promise<LocalScriptsApiResponse> {
   const data = (await response.json().catch(() => null)) as
-    | ScriptsApiResponse
+    | LocalScriptsApiResponse
     | null;
 
   if (!data) {
@@ -141,6 +189,28 @@ async function parseApiResponse(response: Response): Promise<ScriptsApiResponse>
   return data;
 }
 
+async function parseDevicesResponse(response: Response): Promise<DevicesApiResponse> {
+  const data = (await response.json().catch(() => null)) as DevicesApiResponse | null;
+
+  if (!data) {
+    return {
+      ok: false,
+      error: 'Resposta inválida da API.',
+      devices: [],
+    };
+  }
+
+  if (!response.ok || !data.ok) {
+    return {
+      ok: false,
+      error: data.error ?? 'Erro ao carregar dispositivos.',
+      devices: [],
+    };
+  }
+
+  return data;
+}
+
 export function RemoteScriptsPanel({
   customerId,
   customerName,
@@ -148,36 +218,73 @@ export function RemoteScriptsPanel({
 }: RemoteScriptsPanelProps) {
   const router = useRouter();
 
-  const [scripts, setScripts] = useState<RemoteScript[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [trmmScripts, setTrmmScripts] = useState<TrmmScript[]>([]);
+  const [localScripts, setLocalScripts] = useState<LocalScript[]>([]);
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [isLoadingTrmmScripts, setIsLoadingTrmmScripts] = useState(true);
+  const [isLoadingLocalScripts, setIsLoadingLocalScripts] = useState(true);
+  const [isLoadingDevices, setIsLoadingDevices] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
+  const [isExecuting, setIsExecuting] = useState(false);
   const [status, setStatus] = useState<StatusMessage>(null);
+  const [executionResult, setExecutionResult] = useState<{
+    stdout?: string;
+    stderr?: string;
+    retcode?: number;
+    execution_time?: number;
+  } | null>(null);
+
+  const [scriptSearch, setScriptSearch] = useState('');
+  const [selectedScriptId, setSelectedScriptId] = useState('');
+  const [selectedDeviceId, setSelectedDeviceId] = useState('');
+  const [runAsUser, setRunAsUser] = useState(false);
+  const [timeout, setTimeoutValue] = useState(90);
 
   const [scriptName, setScriptName] = useState('');
   const [scriptDescription, setScriptDescription] = useState('');
-  const [scriptShell, setScriptShell] =
-    useState<RemoteScript['shell']>('powershell');
+  const [scriptShell, setScriptShell] = useState<LocalScript['shell']>('powershell');
   const [scriptBody, setScriptBody] = useState('');
   const [createAsSafesys, setCreateAsSafesys] = useState(false);
 
   const isAdmin = role.toLowerCase() === 'admin';
 
-  const approvedScripts = useMemo(
-    () => scripts.filter((script) => script.status === 'approved'),
-    [scripts],
-  );
+  const filteredTrmmScripts = useMemo(() => {
+    const query = scriptSearch.trim().toLowerCase();
 
-  const pendingScripts = useMemo(
-    () => scripts.filter((script) => script.status === 'pending_review'),
-    [scripts],
-  );
+    if (!query) {
+      return trmmScripts;
+    }
 
-  async function loadScripts() {
+    return trmmScripts.filter((script) => {
+      return [
+        script.name,
+        script.description ?? '',
+        script.category ?? '',
+        script.script_type ?? '',
+        script.shell ?? '',
+      ]
+        .join(' ')
+        .toLowerCase()
+        .includes(query);
+    });
+  }, [scriptSearch, trmmScripts]);
+
+  const selectedScript = useMemo(() => {
+    const numericId = Number(selectedScriptId);
+
+    return trmmScripts.find((script) => script.id === numericId) ?? null;
+  }, [selectedScriptId, trmmScripts]);
+
+  const selectedDevice = useMemo(() => {
+    return devices.find((device) => device.id === selectedDeviceId) ?? null;
+  }, [devices, selectedDeviceId]);
+
+  async function loadTrmmScripts() {
     try {
-      setIsLoading(true);
+      setIsLoadingTrmmScripts(true);
 
       const response = await fetch(
-        `/api/admin/scripts?customerId=${encodeURIComponent(customerId)}`,
+        `/api/admin/scripts/trmm?customerId=${encodeURIComponent(customerId)}`,
         {
           method: 'GET',
           cache: 'no-store',
@@ -187,25 +294,112 @@ export function RemoteScriptsPanel({
       const data = await parseApiResponse(response);
 
       if (!data.ok) {
-        throw new Error(data.error ?? 'Erro ao carregar scripts.');
+        throw new Error(data.error ?? 'Erro ao carregar scripts do TRMM.');
       }
 
-      setScripts(data.scripts ?? []);
+      const scripts = data.scripts ?? [];
+      setTrmmScripts(scripts);
+
+      if (!selectedScriptId && scripts.length > 0) {
+        setSelectedScriptId(String(scripts[0].id));
+        setTimeoutValue(scripts[0].default_timeout ?? 90);
+        setRunAsUser(scripts[0].run_as_user === true);
+      }
     } catch (error) {
       setStatus({
         type: 'error',
         message:
-          error instanceof Error ? error.message : 'Erro ao carregar scripts.',
+          error instanceof Error
+            ? error.message
+            : 'Erro ao carregar scripts do TRMM.',
       });
     } finally {
-      setIsLoading(false);
+      setIsLoadingTrmmScripts(false);
+    }
+  }
+
+  async function loadLocalScripts() {
+    try {
+      setIsLoadingLocalScripts(true);
+
+      const response = await fetch(
+        `/api/admin/scripts?customerId=${encodeURIComponent(customerId)}`,
+        {
+          method: 'GET',
+          cache: 'no-store',
+        },
+      );
+
+      const data = await parseLocalScriptsResponse(response);
+
+      if (!data.ok) {
+        throw new Error(data.error ?? 'Erro ao carregar scripts locais.');
+      }
+
+      setLocalScripts(data.scripts ?? []);
+    } catch (error) {
+      setStatus({
+        type: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Erro ao carregar scripts locais.',
+      });
+    } finally {
+      setIsLoadingLocalScripts(false);
+    }
+  }
+
+  async function loadDevices() {
+    try {
+      setIsLoadingDevices(true);
+
+      const response = await fetch(
+        `/api/admin/devices?customerId=${encodeURIComponent(customerId)}`,
+        {
+          method: 'GET',
+          cache: 'no-store',
+        },
+      );
+
+      const data = await parseDevicesResponse(response);
+
+      if (!data.ok) {
+        throw new Error(data.error ?? 'Erro ao carregar dispositivos.');
+      }
+
+      const nextDevices = data.devices ?? [];
+      setDevices(nextDevices);
+
+      if (!selectedDeviceId && nextDevices.length > 0) {
+        setSelectedDeviceId(nextDevices[0].id);
+      }
+    } catch (error) {
+      setStatus({
+        type: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Erro ao carregar dispositivos.',
+      });
+    } finally {
+      setIsLoadingDevices(false);
     }
   }
 
   useEffect(() => {
-    loadScripts();
+    loadTrmmScripts();
+    loadLocalScripts();
+    loadDevices();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerId]);
+
+  useEffect(() => {
+    if (selectedScript) {
+      setTimeoutValue(selectedScript.default_timeout ?? 90);
+      setRunAsUser(selectedScript.run_as_user === true);
+    }
+  }, [selectedScript]);
 
   async function handleCreateScript(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -241,7 +435,7 @@ export function RemoteScriptsPanel({
         }),
       });
 
-      const data = await parseApiResponse(response);
+      const data = await parseLocalScriptsResponse(response);
 
       if (!data.ok) {
         throw new Error(data.error ?? 'Erro ao cadastrar script.');
@@ -258,7 +452,7 @@ export function RemoteScriptsPanel({
       setScriptBody('');
       setCreateAsSafesys(false);
 
-      await loadScripts();
+      await loadLocalScripts();
       router.refresh();
     } catch (error) {
       setStatus({
@@ -271,6 +465,63 @@ export function RemoteScriptsPanel({
     }
   }
 
+  async function handleExecuteScript(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!selectedScript || !selectedDevice) {
+      setStatus({
+        type: 'error',
+        message: 'Selecione um script e um dispositivo.',
+      });
+      return;
+    }
+
+    try {
+      setIsExecuting(true);
+      setStatus(null);
+      setExecutionResult(null);
+
+      const response = await fetch('/api/admin/scripts/trmm/execute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store',
+        body: JSON.stringify({
+          customerId,
+          deviceId: selectedDevice.id,
+          scriptId: selectedScript.id,
+          scriptName: selectedScript.name,
+          shell: cleanShell(selectedScript.shell),
+          timeout,
+          runAsUser,
+        }),
+      });
+
+      const data = await parseApiResponse(response);
+
+      if (!data.ok) {
+        throw new Error(data.error ?? 'Erro ao executar script.');
+      }
+
+      setExecutionResult(data.result ?? null);
+      setStatus({
+        type: data.result?.retcode === 0 ? 'success' : 'error',
+        message: data.message ?? 'Script executado.',
+      });
+
+      router.refresh();
+    } catch (error) {
+      setStatus({
+        type: 'error',
+        message:
+          error instanceof Error ? error.message : 'Erro ao executar script.',
+      });
+    } finally {
+      setIsExecuting(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <StatusAlert status={status} />
@@ -280,37 +531,237 @@ export function RemoteScriptsPanel({
           <div>
             <h2 className="section-title">Scripts remotos</h2>
             <p className="mt-2 text-sm text-slate-600">
-              Biblioteca de scripts aprovados e scripts próprios do cliente{' '}
+              Execute scripts da biblioteca real do TRMM em dispositivos do cliente{' '}
               <span className="font-semibold text-slate-800">{customerName}</span>.
-              Este primeiro pacote prepara o catálogo. A execução remota será
-              ativada no próximo pacote.
+              Nesta etapa, a execução é liberada em um dispositivo por vez.
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 text-sm">
+          <div className="grid grid-cols-3 gap-3 text-sm">
             <div className="rounded-xl border border-brand-100 bg-brand-50 px-4 py-3 text-brand-900">
               <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">
-                Aprovados
+                TRMM
               </p>
-              <p className="mt-1 text-2xl font-bold">{approvedScripts.length}</p>
+              <p className="mt-1 text-2xl font-bold">{trmmScripts.length}</p>
             </div>
 
-            <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-amber-900">
-              <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
-                Pendentes
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                Locais
               </p>
-              <p className="mt-1 text-2xl font-bold">{pendingScripts.length}</p>
+              <p className="mt-1 text-2xl font-bold">{localScripts.length}</p>
+            </div>
+
+            <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-emerald-900">
+              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                Devices
+              </p>
+              <p className="mt-1 text-2xl font-bold">{devices.length}</p>
             </div>
           </div>
         </div>
       </div>
+
+      <form
+        onSubmit={handleExecuteScript}
+        className="rounded-2xl border border-surface-border bg-white p-5 shadow-sm"
+      >
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 className="section-title">Executar script TRMM</h3>
+            <p className="mt-1 text-sm text-slate-600">
+              Selecione um script da biblioteca do TRMM e execute em um agente.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              loadTrmmScripts();
+              loadDevices();
+            }}
+            className={secondaryButtonClassName}
+          >
+            Atualizar biblioteca
+          </button>
+        </div>
+
+        <div className="mt-5 grid gap-4 xl:grid-cols-2">
+          <FieldLabel label="Buscar script">
+            <input
+              className={inputClassName}
+              value={scriptSearch}
+              onChange={(event) => setScriptSearch(event.target.value)}
+              placeholder="Buscar por nome, categoria, shell..."
+            />
+          </FieldLabel>
+
+          <FieldLabel label="Script TRMM">
+            <select
+              className={inputClassName}
+              value={selectedScriptId}
+              onChange={(event) => setSelectedScriptId(event.target.value)}
+              disabled={isLoadingTrmmScripts}
+              required
+            >
+              {filteredTrmmScripts.map((script) => (
+                <option key={script.id} value={script.id}>
+                  {script.name} — {script.category ?? 'Sem categoria'}
+                </option>
+              ))}
+            </select>
+          </FieldLabel>
+
+          <FieldLabel label="Dispositivo">
+            <select
+              className={inputClassName}
+              value={selectedDeviceId}
+              onChange={(event) => setSelectedDeviceId(event.target.value)}
+              disabled={isLoadingDevices}
+              required
+            >
+              {devices.map((device) => (
+                <option key={device.id} value={device.id}>
+                  {device.name} — {device.site}
+                </option>
+              ))}
+            </select>
+          </FieldLabel>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FieldLabel label="Timeout">
+              <input
+                type="number"
+                min={5}
+                max={3600}
+                className={inputClassName}
+                value={timeout}
+                onChange={(event) => setTimeoutValue(Number(event.target.value))}
+                required
+              />
+            </FieldLabel>
+
+            <FieldLabel label="Executar como">
+              <select
+                className={inputClassName}
+                value={runAsUser ? 'user' : 'system'}
+                onChange={(event) => setRunAsUser(event.target.value === 'user')}
+              >
+                <option value="system">SYSTEM</option>
+                <option value="user">Usuário logado</option>
+              </select>
+            </FieldLabel>
+          </div>
+        </div>
+
+        {selectedScript ? (
+          <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+            <p className="font-semibold text-brand-900">{selectedScript.name}</p>
+            <p className="mt-1">{selectedScript.description ?? 'Sem descrição.'}</p>
+            <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-4">
+              <p>
+                <span className="font-semibold text-slate-800">ID:</span>{' '}
+                {selectedScript.id}
+              </p>
+              <p>
+                <span className="font-semibold text-slate-800">Shell:</span>{' '}
+                {cleanShell(selectedScript.shell)}
+              </p>
+              <p>
+                <span className="font-semibold text-slate-800">Plataformas:</span>{' '}
+                {formatPlatforms(selectedScript.supported_platforms)}
+              </p>
+              <p>
+                <span className="font-semibold text-slate-800">Tipo:</span>{' '}
+                {selectedScript.script_type ?? '—'}
+              </p>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="mt-5 flex justify-end">
+          <button
+            type="submit"
+            className={primaryButtonClassName}
+            disabled={
+              isExecuting ||
+              isLoadingTrmmScripts ||
+              isLoadingDevices ||
+              !selectedScriptId ||
+              !selectedDeviceId
+            }
+          >
+            {isExecuting ? 'Executando...' : 'Executar script'}
+          </button>
+        </div>
+      </form>
+
+      {executionResult ? (
+        <div className="rounded-2xl border border-surface-border bg-white p-5 shadow-sm">
+          <h3 className="section-title">Resultado da última execução</h3>
+
+          <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Retcode
+              </p>
+              <p className="mt-1 text-xl font-bold text-slate-900">
+                {executionResult.retcode ?? '—'}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Tempo
+              </p>
+              <p className="mt-1 text-xl font-bold text-slate-900">
+                {executionResult.execution_time ?? '—'}s
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Status
+              </p>
+              <p className="mt-1 text-xl font-bold text-slate-900">
+                {executionResult.retcode === 0 ? 'Sucesso' : 'Falha'}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 lg:grid-cols-2">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                STDOUT
+              </p>
+              <pre className="mt-2 max-h-96 overflow-auto rounded-xl bg-slate-950 p-4 text-xs text-slate-100">
+                {executionResult.stdout || 'Sem saída.'}
+              </pre>
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                STDERR
+              </p>
+              <pre className="mt-2 max-h-96 overflow-auto rounded-xl bg-slate-950 p-4 text-xs text-rose-100">
+                {executionResult.stderr || 'Sem erros.'}
+              </pre>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)]">
         <form
           onSubmit={handleCreateScript}
           className="rounded-2xl border border-surface-border bg-white p-5 shadow-sm"
         >
-          <h3 className="section-title">Cadastrar script</h3>
+          <h3 className="section-title">Cadastrar script local</h3>
+
+          <p className="mt-2 text-sm text-slate-600">
+            Scripts locais ficam registrados no SafeOps para revisão. A execução
+            direta deles será tratada em uma próxima etapa.
+          </p>
 
           <div className="mt-5 space-y-4">
             <FieldLabel label="Nome do script">
@@ -338,7 +789,7 @@ export function RemoteScriptsPanel({
                 className={inputClassName}
                 value={scriptShell}
                 onChange={(event) =>
-                  setScriptShell(event.target.value as RemoteScript['shell'])
+                  setScriptShell(event.target.value as LocalScript['shell'])
                 }
               >
                 <option value="powershell">PowerShell</option>
@@ -366,18 +817,16 @@ export function RemoteScriptsPanel({
                   onChange={(event) => setCreateAsSafesys(event.target.checked)}
                   className="mt-1"
                 />
-                <span>
-                  Cadastrar como script aprovado da biblioteca Safesys
-                </span>
+                <span>Cadastrar como script aprovado da biblioteca Safesys</span>
               </label>
             ) : null}
 
             <button
               type="submit"
-              className={primaryButtonClassName}
+              className={secondaryButtonClassName}
               disabled={isCreating}
             >
-              {isCreating ? 'Salvando...' : 'Salvar script'}
+              {isCreating ? 'Salvando...' : 'Salvar script local'}
             </button>
           </div>
         </form>
@@ -385,19 +834,19 @@ export function RemoteScriptsPanel({
         <div className="rounded-2xl border border-surface-border bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h3 className="section-title">Biblioteca de scripts</h3>
+              <h3 className="section-title">Scripts locais SafeOps</h3>
               <p className="mt-1 text-sm text-slate-600">
-                Scripts aprovados da Safesys e scripts cadastrados para este cliente.
+                Scripts próprios cadastrados no SafeOps.
               </p>
             </div>
 
             <button
               type="button"
-              onClick={loadScripts}
+              onClick={loadLocalScripts}
               className={secondaryButtonClassName}
-              disabled={isLoading}
+              disabled={isLoadingLocalScripts}
             >
-              {isLoading ? 'Atualizando...' : 'Atualizar lista'}
+              {isLoadingLocalScripts ? 'Atualizando...' : 'Atualizar lista'}
             </button>
           </div>
 
@@ -417,27 +866,24 @@ export function RemoteScriptsPanel({
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Status
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Ações
-                  </th>
                 </tr>
               </thead>
 
               <tbody className="divide-y divide-slate-100 bg-white">
-                {isLoading ? (
+                {isLoadingLocalScripts ? (
                   <tr>
-                    <td className="px-4 py-6 text-slate-500" colSpan={5}>
+                    <td className="px-4 py-6 text-slate-500" colSpan={4}>
                       Carregando scripts...
                     </td>
                   </tr>
-                ) : scripts.length === 0 ? (
+                ) : localScripts.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-6 text-slate-500" colSpan={5}>
-                      Nenhum script cadastrado.
+                    <td className="px-4 py-6 text-slate-500" colSpan={4}>
+                      Nenhum script local cadastrado.
                     </td>
                   </tr>
                 ) : (
-                  scripts.map((script) => (
+                  localScripts.map((script) => (
                     <tr key={script.id}>
                       <td className="px-4 py-3">
                         <p className="font-semibold text-brand-900">
@@ -452,33 +898,21 @@ export function RemoteScriptsPanel({
                       </td>
 
                       <td className="px-4 py-3 text-slate-700">
-                        {scopeLabel(script.scope)}
+                        {script.scope === 'safesys'
+                          ? 'Biblioteca Safesys'
+                          : 'Script do cliente'}
                       </td>
 
                       <td className="px-4 py-3 text-slate-700">
                         {script.shell}
                       </td>
 
-                      <td className="px-4 py-3">
-                        <span
-                          className={[
-                            'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset',
-                            statusClassName(script.status),
-                          ].join(' ')}
-                        >
-                          {statusLabel(script.status)}
-                        </span>
-                      </td>
-
-                      <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          disabled
-                          className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-400"
-                          title="Execução será habilitada no próximo pacote"
-                        >
-                          Executar em breve
-                        </button>
+                      <td className="px-4 py-3 text-slate-700">
+                        {script.status === 'approved'
+                          ? 'Aprovado'
+                          : script.status === 'pending_review'
+                            ? 'Pendente'
+                            : 'Desativado'}
                       </td>
                     </tr>
                   ))
