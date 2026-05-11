@@ -70,7 +70,7 @@ const cardClassName =
   'rounded-2xl border border-surface-border bg-white p-5 shadow-sm';
 
 const buttonClassName =
-  'inline-flex items-center justify-center rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60';
+  'inline-flex items-center justify-center rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-60';
 
 const secondaryButtonClassName =
   'inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60';
@@ -609,76 +609,78 @@ export function WindowsUpdatesPanel({ customerId }: WindowsUpdatesPanelProps) {
 
                           <div className="flex shrink-0 flex-wrap gap-2">
                             {normalize(update.action) === 'approve' ? (
-                              <button
-                                type="button"
-                                className={buttonClassName}
-                                disabled={Boolean(runningAction)}
-                                onClick={() =>
-                                  runAction({
-                                    action: 'install-approved',
-                                    agentId: selectedDevice.agent_id,
-                                    confirmMessage:
-                                      'Instalar os updates aprovados neste dispositivo? Em servidores, valide a janela de manutenção antes de prosseguir.',
-                                  })
-                                }
-                              >
-                                {runningAction ===
-                                `install-approved:${selectedDevice.agent_id}:agent`
-                                  ? 'Instalando...'
-                                  : 'Instalar aprovados'}
-                              </button>
+                              <>
+                                <button
+                                  type="button"
+                                  className={buttonClassName}
+                                  disabled={Boolean(runningAction)}
+                                  onClick={() =>
+                                    runAction({
+                                      action: 'install-approved',
+                                      agentId: selectedDevice.agent_id,
+                                      confirmMessage:
+                                        'Instalar os updates aprovados neste dispositivo? Em servidores, valide a janela de manutenção antes de prosseguir.',
+                                    })
+                                  }
+                                >
+                                  {runningAction ===
+                                  `install-approved:${selectedDevice.agent_id}:agent`
+                                    ? 'Instalando...'
+                                    : 'Instalar aprovados'}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  className={secondaryButtonClassName}
+                                  disabled={Boolean(runningAction)}
+                                  onClick={() =>
+                                    runAction({
+                                      action: 'reset-update',
+                                      agentId: selectedDevice.agent_id,
+                                      updateId: update.id,
+                                    })
+                                  }
+                                >
+                                  Limpar ação
+                                </button>
+                              </>
                             ) : (
-                              <button
-                                type="button"
-                                className={secondaryButtonClassName}
-                                disabled={Boolean(runningAction)}
-                                onClick={() =>
-                                  runAction({
-                                    action: 'approve-update',
-                                    agentId: selectedDevice.agent_id,
-                                    updateId: update.id,
-                                  })
-                                }
-                              >
-                                {runningAction ===
-                                `approve-update:${actionKey}`
-                                  ? 'Aprovando...'
-                                  : 'Aprovar'}
-                              </button>
+                              <>
+                                <button
+                                  type="button"
+                                  className={secondaryButtonClassName}
+                                  disabled={Boolean(runningAction)}
+                                  onClick={() =>
+                                    runAction({
+                                      action: 'approve-update',
+                                      agentId: selectedDevice.agent_id,
+                                      updateId: update.id,
+                                    })
+                                  }
+                                >
+                                  {runningAction ===
+                                  `approve-update:${actionKey}`
+                                    ? 'Aprovando...'
+                                    : 'Aprovar'}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  className={dangerButtonClassName}
+                                  disabled={Boolean(runningAction)}
+                                  onClick={() =>
+                                    runAction({
+                                      action: 'ignore-update',
+                                      agentId: selectedDevice.agent_id,
+                                      updateId: update.id,
+                                      confirmMessage: 'Ignorar este update?',
+                                    })
+                                  }
+                                >
+                                  Ignorar
+                                </button>
+                              </>
                             )}
-
-                            <button
-                              type="button"
-                              className={dangerButtonClassName}
-                              disabled={Boolean(runningAction)}
-                              onClick={() =>
-                                runAction({
-                                  action: 'ignore-update',
-                                  agentId: selectedDevice.agent_id,
-                                  updateId: update.id,
-                                  confirmMessage: 'Ignorar este update?',
-                                })
-                              }
-                            >
-                              Ignorar
-                            </button>
-
-                            {normalize(update.action) !== 'nothing' ? (
-                              <button
-                                type="button"
-                                className={secondaryButtonClassName}
-                                disabled={Boolean(runningAction)}
-                                onClick={() =>
-                                  runAction({
-                                    action: 'reset-update',
-                                    agentId: selectedDevice.agent_id,
-                                    updateId: update.id,
-                                  })
-                                }
-                              >
-                                Limpar ação
-                              </button>
-                            ) : null}
                           </div>
                         </div>
                       </div>
