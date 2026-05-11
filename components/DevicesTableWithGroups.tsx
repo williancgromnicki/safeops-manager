@@ -1,7 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 
 import { DataTable } from '@/components/DataTable';
@@ -21,6 +28,11 @@ type ApiResponse = {
   ok: boolean;
   error?: string;
   message?: string;
+};
+
+type MenuPosition = {
+  top: number;
+  left: number;
 };
 
 const statusLabel: Record<OperationalStatus, string> = {
@@ -99,6 +111,38 @@ function normalize(value: string): string {
   return value.trim().toLowerCase();
 }
 
+function calculateMenuPosition(button: HTMLButtonElement): MenuPosition {
+  const rect = button.getBoundingClientRect();
+  const menuWidth = 224;
+  const menuHeight = 118;
+  const gap = 8;
+  const padding = 12;
+
+  let left = rect.right - menuWidth;
+  let top = rect.bottom + gap;
+
+  if (left < padding) {
+    left = padding;
+  }
+
+  if (left + menuWidth > window.innerWidth - padding) {
+    left = window.innerWidth - menuWidth - padding;
+  }
+
+  if (top + menuHeight > window.innerHeight - padding) {
+    top = rect.top - menuHeight - gap;
+  }
+
+  if (top < padding) {
+    top = padding;
+  }
+
+  return {
+    top,
+    left,
+  };
+}
+
 function DeviceRowActions({
   device,
   customerId,
@@ -109,29 +153,64 @@ function DeviceRowActions({
   onMessage: (message: { type: 'success' | 'error'; message: string }) => void;
 }) {
   const router = useRouter();
-  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   const [isOpen, setIsOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (
-        wrapperRef.current &&
-        !wrapperRef.current.contains(event.target as Node)
-      ) {
-        setIsOpen(false);
+      const target = event.target as Node;
+
+      if (buttonRef.current?.contains(target)) {
+        return;
       }
+
+      if (menuRef.current?.contains(target)) {
+        return;
+      }
+
+      setIsOpen(false);
     }
 
-    document.addEventListener('mousedown', handleClickOutside);
+    function handleReposition() {
+      if (!buttonRef.current) {
+        return;
+      }
+
+      setMenuPosition(calculateMenuPosition(buttonRef.current));
+    }
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      window.addEventListener('resize', handleReposition);
+      window.addEventListener('scroll', handleReposition, true);
+    }
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('resize', handleReposition);
+      window.removeEventListener('scroll', handleReposition, true);
     };
-  }, []);
+  }, [isOpen]);
+
+  function toggleMenu() {
+    if (!buttonRef.current) {
+      return;
+    }
+
+    setMenuPosition(calculateMenuPosition(buttonRef.current));
+    setIsOpen((current) => !current);
+  }
 
   async function handleDeleteAgent() {
     if (deleteConfirmation !== device.name) {
@@ -181,21 +260,20 @@ function DeviceRowActions({
     }
   }
 
-  return (
-    <>
-      <div ref={wrapperRef} className="relative flex justify-end">
-        <button
-          type="button"
-          onClick={() => setIsOpen((current) => !current)}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
-          aria-label={`Ações de ${device.name}`}
-          title="Ações"
-        >
-          <MoreIcon />
-        </button>
-
-        {isOpen ? (
-          <div className="absolute right-0 z-30 mt-10 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
+  const menu =
+    isMounted && isOpen && menuPosition
+      ? createPortal(
+          <div
+            ref={menuRef}
+            style={{
+              position: 'fixed',
+              top: `${menuPosition.top}px`,
+              left: `${menuPosition.left}px`,
+              width: '224px',
+              zIndex: 9999,
+            }}
+            className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl"
+          >
             <div className="border-b border-slate-100 px-4 py-3">
               <p className="text-sm font-semibold text-slate-900">
                 Ações do agente
@@ -215,12 +293,30 @@ function DeviceRowActions({
                 Deletar agente
               </button>
             </div>
-          </div>
-        ) : null}
+          </div>,
+          document.body,
+        )
+      : null;
+
+  return (
+    <>
+      <div className="flex justify-end">
+        <button
+          ref={buttonRef}
+          type="button"
+          onClick={toggleMenu}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
+          aria-label={`Ações de ${device.name}`}
+          title="Ações"
+        >
+          <MoreIcon />
+        </button>
       </div>
 
+      {menu}
+
       {isConfirmingDelete ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/40 p-4">
           <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
             <h3 className="text-lg font-semibold text-rose-700">
               Deletar agente
@@ -496,7 +592,7 @@ export function DevicesTableWithGroups({
       </DataTable>
 
       {isModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/40 p-4">
           <form
             onSubmit={handleCreateGroup}
             className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
