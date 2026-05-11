@@ -31,6 +31,21 @@ export type TrmmScriptExecutionResult = {
   id?: number;
 };
 
+export type TrmmAgent = {
+  agent_id: string;
+  hostname: string;
+  client?: string;
+  client_name?: string;
+  site_name?: string;
+  site?: number;
+  operating_system?: string;
+  status?: string;
+};
+
+function normalize(value?: string | null): string {
+  return (value ?? '').trim().toLowerCase();
+}
+
 export async function fetchTrmmScripts(): Promise<TrmmScript[]> {
   return fetchTrmmApi<TrmmScript[]>('/scripts/?showHiddenScripts=true', {
     method: 'GET',
@@ -46,6 +61,57 @@ export async function downloadTrmmScript(
       method: 'GET',
     },
   );
+}
+
+export async function fetchTrmmAgents(): Promise<TrmmAgent[]> {
+  return fetchTrmmApi<TrmmAgent[]>('/agents/?detail=false', {
+    method: 'GET',
+  });
+}
+
+export async function resolveTrmmAgent(input: {
+  deviceId?: string | null;
+  hostname?: string | null;
+  siteName?: string | null;
+}): Promise<TrmmAgent | null> {
+  const agents = await fetchTrmmAgents();
+
+  const deviceId = input.deviceId?.trim();
+
+  if (deviceId) {
+    const byId = agents.find((agent) => agent.agent_id === deviceId);
+
+    if (byId) {
+      return byId;
+    }
+  }
+
+  const hostname = input.hostname?.trim();
+
+  if (!hostname) {
+    return null;
+  }
+
+  const normalizedHostname = normalize(hostname);
+  const normalizedSiteName = normalize(input.siteName);
+
+  const candidates = agents.filter(
+    (agent) => normalize(agent.hostname) === normalizedHostname,
+  );
+
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  if (candidates.length === 1) {
+    return candidates[0];
+  }
+
+  const bySite = candidates.find(
+    (agent) => !normalizedSiteName || normalize(agent.site_name) === normalizedSiteName,
+  );
+
+  return bySite ?? candidates[0];
 }
 
 export async function executeTrmmScript(input: {

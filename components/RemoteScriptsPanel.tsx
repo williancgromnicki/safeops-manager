@@ -4,7 +4,8 @@ import type { FormEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-type TrmmScript = {
+type LibraryScript = {
+  source: 'library';
   id: number;
   name: string;
   description?: string | null;
@@ -16,9 +17,11 @@ type TrmmScript = {
   hidden?: boolean;
   supported_platforms?: string[];
   run_as_user?: boolean;
+  args?: unknown[];
 };
 
 type LocalScript = {
+  source: 'local';
   id: string;
   customer_id: string | null;
   scope: 'safesys' | 'customer';
@@ -32,6 +35,8 @@ type LocalScript = {
   updated_at: string | null;
 };
 
+type UnifiedScript = LibraryScript | LocalScript;
+
 type Device = {
   id: string;
   name: string;
@@ -43,7 +48,7 @@ type ApiResponse = {
   ok: boolean;
   error?: string;
   message?: string;
-  scripts?: TrmmScript[];
+  scripts?: Omit<LibraryScript, 'source'>[];
   result?: {
     stdout?: string;
     stderr?: string;
@@ -56,7 +61,7 @@ type LocalScriptsApiResponse = {
   ok: boolean;
   error?: string;
   message?: string;
-  scripts?: LocalScript[];
+  scripts?: Omit<LocalScript, 'source'>[];
 };
 
 type DevicesApiResponse = {
@@ -135,7 +140,7 @@ function formatDate(value?: string | null): string {
 
 function formatPlatforms(platforms?: string[]): string {
   if (!platforms?.length) {
-    return 'Todas';
+    return 'All';
   }
 
   return platforms.join(', ');
@@ -143,6 +148,62 @@ function formatPlatforms(platforms?: string[]): string {
 
 function cleanShell(shell?: string | null): string {
   return shell?.trim() || 'powershell';
+}
+
+function scriptKey(script: UnifiedScript): string {
+  return `${script.source}:${script.id}`;
+}
+
+function getScriptSourceLabel(script: UnifiedScript): string {
+  if (script.source === 'library') {
+    if (script.script_type === 'builtin') {
+      return 'Nativo';
+    }
+
+    if (script.script_type === 'userdefined') {
+      return 'Personalizado';
+    }
+
+    return 'Biblioteca';
+  }
+
+  return script.scope === 'safesys' ? 'Local Safesys' : 'Local cliente';
+}
+
+function getScriptTimeout(script: UnifiedScript): number {
+  if (script.source === 'library') {
+    return script.default_timeout ?? 90;
+  }
+
+  return 90;
+}
+
+function getScriptCategory(script: UnifiedScript): string {
+  if (script.source === 'library') {
+    return script.category ?? 'Sem categoria';
+  }
+
+  return script.scope === 'safesys' ? 'SafeOps local' : 'Cliente local';
+}
+
+function getScriptDescription(script: UnifiedScript): string {
+  return script.description ?? 'Sem descrição.';
+}
+
+function getScriptPlatforms(script: UnifiedScript): string {
+  if (script.source === 'library') {
+    return formatPlatforms(script.supported_platforms);
+  }
+
+  return 'All';
+}
+
+function canExecuteScript(script: UnifiedScript, isAdmin: boolean): boolean {
+  if (script.source === 'library') {
+    return true;
+  }
+
+  return script.status === 'approved' || isAdmin;
 }
 
 async function parseApiResponse(response: Response): Promise<ApiResponse> {
@@ -218,10 +279,10 @@ export function RemoteScriptsPanel({
 }: RemoteScriptsPanelProps) {
   const router = useRouter();
 
-  const [trmmScripts, setTrmmScripts] = useState<TrmmScript[]>([]);
+  const [libraryScripts, setLibraryScripts] = useState<LibraryScript[]>([]);
   const [localScripts, setLocalScripts] = useState<LocalScript[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
-  const [isLoadingTrmmScripts, setIsLoadingTrmmScripts] = useState(true);
+  const [isLoadingLibrary, setIsLoadingLibrary] = useState(true);
   const [isLoadingLocalScripts, setIsLoadingLocalScripts] = useState(true);
   const [isLoadingDevices, setIsLoadingDevices] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
@@ -235,7 +296,7 @@ export function RemoteScriptsPanel({
   } | null>(null);
 
   const [scriptSearch, setScriptSearch] = useState('');
-  const [selectedScriptId, setSelectedScriptId] = useState('');
+  const [selectedScriptKey, setSelectedScriptKey] = useState('');
   const [selectedDeviceId, setSelectedDeviceId] = useState('');
   const [runAsUser, setRunAsUser] = useState(false);
   const [timeout, setTimeoutValue] = useState(90);
@@ -248,40 +309,45 @@ export function RemoteScriptsPanel({
 
   const isAdmin = role.toLowerCase() === 'admin';
 
-  const filteredTrmmScripts = useMemo(() => {
+  const unifiedScripts = useMemo<UnifiedScript[]>(() => {
+    return [...libraryScripts, ...localScripts];
+  }, [libraryScripts, localScripts]);
+
+  const filteredScripts = useMemo(() => {
     const query = scriptSearch.trim().toLowerCase();
 
-    if (!query) {
-      return trmmScripts;
-    }
+    const filtered = unifiedScripts.filter((script) => {
+      if (!query) {
+        return true;
+      }
 
-    return trmmScripts.filter((script) => {
       return [
         script.name,
-        script.description ?? '',
-        script.category ?? '',
-        script.script_type ?? '',
-        script.shell ?? '',
+        getScriptDescription(script),
+        getScriptCategory(script),
+        getScriptSourceLabel(script),
+        cleanShell(script.shell),
+        getScriptPlatforms(script),
       ]
         .join(' ')
         .toLowerCase()
         .includes(query);
     });
-  }, [scriptSearch, trmmScripts]);
+
+    return filtered.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  }, [scriptSearch, unifiedScripts]);
 
   const selectedScript = useMemo(() => {
-    const numericId = Number(selectedScriptId);
-
-    return trmmScripts.find((script) => script.id === numericId) ?? null;
-  }, [selectedScriptId, trmmScripts]);
+    return unifiedScripts.find((script) => scriptKey(script) === selectedScriptKey) ?? null;
+  }, [selectedScriptKey, unifiedScripts]);
 
   const selectedDevice = useMemo(() => {
     return devices.find((device) => device.id === selectedDeviceId) ?? null;
   }, [devices, selectedDeviceId]);
 
-  async function loadTrmmScripts() {
+  async function loadLibraryScripts() {
     try {
-      setIsLoadingTrmmScripts(true);
+      setIsLoadingLibrary(true);
 
       const response = await fetch(
         `/api/admin/scripts/trmm?customerId=${encodeURIComponent(customerId)}`,
@@ -294,27 +360,23 @@ export function RemoteScriptsPanel({
       const data = await parseApiResponse(response);
 
       if (!data.ok) {
-        throw new Error(data.error ?? 'Erro ao carregar scripts do TRMM.');
+        throw new Error(data.error ?? 'Erro ao carregar biblioteca.');
       }
 
-      const scripts = data.scripts ?? [];
-      setTrmmScripts(scripts);
+      const scripts = (data.scripts ?? []).map((script) => ({
+        ...script,
+        source: 'library' as const,
+      }));
 
-      if (!selectedScriptId && scripts.length > 0) {
-        setSelectedScriptId(String(scripts[0].id));
-        setTimeoutValue(scripts[0].default_timeout ?? 90);
-        setRunAsUser(scripts[0].run_as_user === true);
-      }
+      setLibraryScripts(scripts);
     } catch (error) {
       setStatus({
         type: 'error',
         message:
-          error instanceof Error
-            ? error.message
-            : 'Erro ao carregar scripts do TRMM.',
+          error instanceof Error ? error.message : 'Erro ao carregar biblioteca.',
       });
     } finally {
-      setIsLoadingTrmmScripts(false);
+      setIsLoadingLibrary(false);
     }
   }
 
@@ -336,7 +398,12 @@ export function RemoteScriptsPanel({
         throw new Error(data.error ?? 'Erro ao carregar scripts locais.');
       }
 
-      setLocalScripts(data.scripts ?? []);
+      const scripts = (data.scripts ?? []).map((script) => ({
+        ...script,
+        source: 'local' as const,
+      }));
+
+      setLocalScripts(scripts);
     } catch (error) {
       setStatus({
         type: 'error',
@@ -388,16 +455,24 @@ export function RemoteScriptsPanel({
   }
 
   useEffect(() => {
-    loadTrmmScripts();
+    loadLibraryScripts();
     loadLocalScripts();
     loadDevices();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerId]);
 
   useEffect(() => {
+    if (!selectedScriptKey && filteredScripts.length > 0) {
+      setSelectedScriptKey(scriptKey(filteredScripts[0]));
+    }
+  }, [filteredScripts, selectedScriptKey]);
+
+  useEffect(() => {
     if (selectedScript) {
-      setTimeoutValue(selectedScript.default_timeout ?? 90);
-      setRunAsUser(selectedScript.run_as_user === true);
+      setTimeoutValue(getScriptTimeout(selectedScript));
+      setRunAsUser(
+        selectedScript.source === 'library' && selectedScript.run_as_user === true,
+      );
     }
   }, [selectedScript]);
 
@@ -476,6 +551,14 @@ export function RemoteScriptsPanel({
       return;
     }
 
+    if (!canExecuteScript(selectedScript, isAdmin)) {
+      setStatus({
+        type: 'error',
+        message: 'Este script ainda não está aprovado para execução.',
+      });
+      return;
+    }
+
     try {
       setIsExecuting(true);
       setStatus(null);
@@ -490,6 +573,7 @@ export function RemoteScriptsPanel({
         body: JSON.stringify({
           customerId,
           deviceId: selectedDevice.id,
+          scriptSource: selectedScript.source,
           scriptId: selectedScript.id,
           scriptName: selectedScript.name,
           shell: cleanShell(selectedScript.shell),
@@ -531,7 +615,7 @@ export function RemoteScriptsPanel({
           <div>
             <h2 className="section-title">Scripts remotos</h2>
             <p className="mt-2 text-sm text-slate-600">
-              Execute scripts da biblioteca real do TRMM em dispositivos do cliente{' '}
+              Execute scripts da biblioteca e scripts locais em dispositivos do cliente{' '}
               <span className="font-semibold text-slate-800">{customerName}</span>.
               Nesta etapa, a execução é liberada em um dispositivo por vez.
             </p>
@@ -540,9 +624,9 @@ export function RemoteScriptsPanel({
           <div className="grid grid-cols-3 gap-3 text-sm">
             <div className="rounded-xl border border-brand-100 bg-brand-50 px-4 py-3 text-brand-900">
               <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">
-                TRMM
+                Biblioteca
               </p>
-              <p className="mt-1 text-2xl font-bold">{trmmScripts.length}</p>
+              <p className="mt-1 text-2xl font-bold">{libraryScripts.length}</p>
             </div>
 
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900">
@@ -568,16 +652,17 @@ export function RemoteScriptsPanel({
       >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h3 className="section-title">Executar script TRMM</h3>
+            <h3 className="section-title">Executar script</h3>
             <p className="mt-1 text-sm text-slate-600">
-              Selecione um script da biblioteca do TRMM e execute em um agente.
+              Selecione um script da biblioteca ou um script local aprovado e execute em um agente.
             </p>
           </div>
 
           <button
             type="button"
             onClick={() => {
-              loadTrmmScripts();
+              loadLibraryScripts();
+              loadLocalScripts();
               loadDevices();
             }}
             className={secondaryButtonClassName}
@@ -592,21 +677,21 @@ export function RemoteScriptsPanel({
               className={inputClassName}
               value={scriptSearch}
               onChange={(event) => setScriptSearch(event.target.value)}
-              placeholder="Buscar por nome, categoria, shell..."
+              placeholder="Buscar por nome, categoria, shell, plataforma..."
             />
           </FieldLabel>
 
-          <FieldLabel label="Script TRMM">
+          <FieldLabel label="Script">
             <select
               className={inputClassName}
-              value={selectedScriptId}
-              onChange={(event) => setSelectedScriptId(event.target.value)}
-              disabled={isLoadingTrmmScripts}
+              value={selectedScriptKey}
+              onChange={(event) => setSelectedScriptKey(event.target.value)}
+              disabled={isLoadingLibrary || isLoadingLocalScripts}
               required
             >
-              {filteredTrmmScripts.map((script) => (
-                <option key={script.id} value={script.id}>
-                  {script.name} — {script.category ?? 'Sem categoria'}
+              {filteredScripts.map((script) => (
+                <option key={scriptKey(script)} value={scriptKey(script)}>
+                  {script.name} — {getScriptCategory(script)}
                 </option>
               ))}
             </select>
@@ -656,9 +741,18 @@ export function RemoteScriptsPanel({
 
         {selectedScript ? (
           <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-            <p className="font-semibold text-brand-900">{selectedScript.name}</p>
-            <p className="mt-1">{selectedScript.description ?? 'Sem descrição.'}</p>
-            <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="font-semibold text-brand-900">{selectedScript.name}</p>
+                <p className="mt-1">{getScriptDescription(selectedScript)}</p>
+              </div>
+
+              <span className="inline-flex w-fit items-center rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">
+                {getScriptSourceLabel(selectedScript)}
+              </span>
+            </div>
+
+            <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-6">
               <p>
                 <span className="font-semibold text-slate-800">ID:</span>{' '}
                 {selectedScript.id}
@@ -669,13 +763,29 @@ export function RemoteScriptsPanel({
               </p>
               <p>
                 <span className="font-semibold text-slate-800">Plataformas:</span>{' '}
-                {formatPlatforms(selectedScript.supported_platforms)}
+                {getScriptPlatforms(selectedScript)}
               </p>
               <p>
-                <span className="font-semibold text-slate-800">Tipo:</span>{' '}
-                {selectedScript.script_type ?? '—'}
+                <span className="font-semibold text-slate-800">Categoria:</span>{' '}
+                {getScriptCategory(selectedScript)}
+              </p>
+              <p>
+                <span className="font-semibold text-slate-800">Timeout:</span>{' '}
+                {getScriptTimeout(selectedScript)}s
+              </p>
+              <p>
+                <span className="font-semibold text-slate-800">Default args:</span>{' '}
+                {selectedScript.source === 'library' && selectedScript.args?.length
+                  ? JSON.stringify(selectedScript.args)
+                  : '—'}
               </p>
             </div>
+
+            {!canExecuteScript(selectedScript, isAdmin) ? (
+              <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                Este script local ainda está pendente de revisão e não pode ser executado por usuários do cliente.
+              </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -685,10 +795,12 @@ export function RemoteScriptsPanel({
             className={primaryButtonClassName}
             disabled={
               isExecuting ||
-              isLoadingTrmmScripts ||
+              isLoadingLibrary ||
+              isLoadingLocalScripts ||
               isLoadingDevices ||
-              !selectedScriptId ||
-              !selectedDeviceId
+              !selectedScriptKey ||
+              !selectedDeviceId ||
+              (selectedScript ? !canExecuteScript(selectedScript, isAdmin) : true)
             }
           >
             {isExecuting ? 'Executando...' : 'Executar script'}
@@ -759,8 +871,7 @@ export function RemoteScriptsPanel({
           <h3 className="section-title">Cadastrar script local</h3>
 
           <p className="mt-2 text-sm text-slate-600">
-            Scripts locais ficam registrados no SafeOps para revisão. A execução
-            direta deles será tratada em uma próxima etapa.
+            Scripts locais ficam registrados no SafeOps para revisão e também aparecem no mesmo campo de busca dos scripts.
           </p>
 
           <div className="mt-5 space-y-4">
@@ -832,23 +943,10 @@ export function RemoteScriptsPanel({
         </form>
 
         <div className="rounded-2xl border border-surface-border bg-white p-5 shadow-sm">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h3 className="section-title">Scripts locais SafeOps</h3>
-              <p className="mt-1 text-sm text-slate-600">
-                Scripts próprios cadastrados no SafeOps.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={loadLocalScripts}
-              className={secondaryButtonClassName}
-              disabled={isLoadingLocalScripts}
-            >
-              {isLoadingLocalScripts ? 'Atualizando...' : 'Atualizar lista'}
-            </button>
-          </div>
+          <h3 className="section-title">Scripts cadastrados localmente</h3>
+          <p className="mt-1 text-sm text-slate-600">
+            Scripts locais ficam disponíveis no campo principal de busca.
+          </p>
 
           <div className="mt-5 overflow-hidden rounded-xl border border-slate-200">
             <table className="min-w-full divide-y divide-slate-200 text-sm">
@@ -898,9 +996,7 @@ export function RemoteScriptsPanel({
                       </td>
 
                       <td className="px-4 py-3 text-slate-700">
-                        {script.scope === 'safesys'
-                          ? 'Biblioteca Safesys'
-                          : 'Script do cliente'}
+                        {getScriptSourceLabel(script)}
                       </td>
 
                       <td className="px-4 py-3 text-slate-700">

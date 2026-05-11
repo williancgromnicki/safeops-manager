@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { createClient } from '@/lib/supabase/server';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
-import { downloadTrmmScript, executeTrmmScript } from '@/lib/trmm/scripts';
+import {
+  downloadTrmmScript,
+  executeTrmmScript,
+  resolveTrmmAgent,
+} from '@/lib/trmm/scripts';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +18,8 @@ type AccessRow = {
 type ExecutePayload = {
   customerId?: string;
   deviceId?: string;
-  scriptId?: number;
+  scriptSource?: 'library' | 'local';
+  scriptId?: number | string;
   scriptName?: string;
   shell?: string;
   timeout?: number;
@@ -26,6 +31,27 @@ type DeviceRow = {
   customer_id: string;
   hostname: string;
   site: string | null;
+};
+
+type LocalScriptRow = {
+  id: string;
+  customer_id: string | null;
+  scope: string;
+  name: string;
+  description: string | null;
+  shell: string;
+  script_body: string;
+  status: string;
+};
+
+type PreparedScript = {
+  code: string;
+  filename: string | null;
+  name: string;
+  shell: string;
+  source: 'library' | 'local';
+  args: unknown[];
+  envVars: unknown[];
 };
 
 function cleanString(value?: string | null): string | null {
@@ -116,6 +142,74 @@ async function getDevice(input: {
   return data as DeviceRow | null;
 }
 
+async function prepareLocalScript(input: {
+  scriptId: string;
+  customerId: string;
+  isAdmin: boolean;
+}): Promise<PreparedScript> {
+  const supabaseAdmin = getSupabaseAdmin();
+
+  const { data, error } = await supabaseAdmin
+    .from('remote_scripts')
+    .select('id, customer_id, scope, name, description, shell, script_body, status')
+    .eq('id', input.scriptId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Erro ao carregar script local: ${error.message}`);
+  }
+
+  if (!data) {
+    throw new Error('Script local não encontrado.');
+  }
+
+  const script = data as LocalScriptRow;
+
+  const canUseScript =
+    script.scope === 'safesys' ||
+    script.customer_id === input.customerId ||
+    input.isAdmin;
+
+  if (!canUseScript) {
+    throw new Error('Este script local não pertence ao cliente selecionado.');
+  }
+
+  if (script.status !== 'approved' && !input.isAdmin) {
+    throw new Error('Este script ainda está pendente de revisão e não pode ser executado.');
+  }
+
+  return {
+    code: script.script_body,
+    filename: null,
+    name: script.name,
+    shell: script.shell || 'powershell',
+    source: 'local',
+    args: [],
+    envVars: [],
+  };
+}
+
+async function prepareLibraryScript(input: {
+  scriptId: number;
+  scriptName?: string | null;
+  shell?: string | null;
+}): Promise<PreparedScript> {
+  const downloadedScript = await downloadTrmmScript(input.scriptId);
+
+  return {
+    code: downloadedScript.code,
+    filename: downloadedScript.filename,
+    name:
+      cleanString(input.scriptName) ??
+      downloadedScript.filename ??
+      `Script ${input.scriptId}`,
+    shell: cleanString(input.shell) ?? 'powershell',
+    source: 'library',
+    args: [],
+    envVars: [],
+  };
+}
+
 async function createRemoteJob(input: {
   customerId: string;
   deviceId: string;
@@ -194,8 +288,7 @@ export async function POST(request: NextRequest) {
 
     const customerId = cleanString(payload.customerId);
     const deviceId = cleanString(payload.deviceId);
-    const scriptId = Number(payload.scriptId);
-    const shell = cleanString(payload.shell) ?? 'powershell';
+    const scriptSource = payload.scriptSource === 'local' ? 'local' : 'library';
     const timeout = Number(payload.timeout ?? 90);
     const runAsUser = payload.runAsUser === true;
 
@@ -209,7 +302,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!Number.isFinite(scriptId) || scriptId <= 0) {
+    if (!payload.scriptId) {
       return NextResponse.json(
         {
           ok: false,
@@ -230,6 +323,7 @@ export async function POST(request: NextRequest) {
     }
 
     const accessRows = await getUserAccessRows(user.id);
+    const isAdmin = isSafesysAdmin(accessRows);
 
     if (!canAccessCustomer({ accessRows, customerId })) {
       return NextResponse.json(
@@ -243,7 +337,7 @@ export async function POST(request: NextRequest) {
 
     const role =
       accessRows.find((row) => row.customer_id === customerId)?.role ??
-      (isSafesysAdmin(accessRows) ? 'admin' : null);
+      (isAdmin ? 'admin' : null);
 
     const device = await getDevice({
       customerId,
@@ -260,39 +354,60 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const downloadedScript = await downloadTrmmScript(scriptId);
-    const scriptName =
-      cleanString(payload.scriptName) ??
-      downloadedScript.filename ??
-      `Script ${scriptId}`;
+    const preparedScript =
+      scriptSource === 'local'
+        ? await prepareLocalScript({
+            scriptId: String(payload.scriptId),
+            customerId,
+            isAdmin,
+          })
+        : await prepareLibraryScript({
+            scriptId: Number(payload.scriptId),
+            scriptName: cleanString(payload.scriptName),
+            shell: cleanString(payload.shell),
+          });
+
+    const trmmAgent = await resolveTrmmAgent({
+      deviceId: device.id,
+      hostname: device.hostname,
+      siteName: device.site,
+    });
+
+    if (!trmmAgent) {
+      throw new Error(
+        `Não foi possível localizar o agent_id real do TRMM para o dispositivo ${device.hostname}. Sincronize o inventário ou valide o hostname no TRMM.`,
+      );
+    }
 
     createdJobId = await createRemoteJob({
       customerId,
       deviceId,
       requestedByEmail: user.email ?? null,
       requestedByRole: role,
-      commandKey: `trmm_script_${scriptId}`,
-      commandLabel: scriptName,
+      commandKey: `${preparedScript.source}_script_${payload.scriptId}`,
+      commandLabel: preparedScript.name,
       parameters: {
-        script_id: scriptId,
-        script_name: scriptName,
-        filename: downloadedScript.filename,
-        shell,
+        source: preparedScript.source,
+        script_id: payload.scriptId,
+        script_name: preparedScript.name,
+        filename: preparedScript.filename,
+        shell: preparedScript.shell,
         timeout,
         run_as_user: runAsUser,
         hostname: device.hostname,
         site: device.site,
+        trmm_agent_id: trmmAgent.agent_id,
       },
     });
 
     const result = await executeTrmmScript({
-      agentId: device.id,
-      code: downloadedScript.code,
+      agentId: trmmAgent.agent_id,
+      code: preparedScript.code,
       timeout,
-      shell,
+      shell: preparedScript.shell,
       runAsUser,
-      args: [],
-      envVars: [],
+      args: preparedScript.args,
+      envVars: preparedScript.envVars,
     });
 
     const status = result.retcode === 0 ? 'success' : 'failed';
@@ -306,6 +421,7 @@ export async function POST(request: NextRequest) {
         retcode: result.retcode,
         execution_time: result.execution_time,
         trmm_result_id: result.id,
+        trmm_agent_id: trmmAgent.agent_id,
       },
       errorMessage:
         status === 'failed'
