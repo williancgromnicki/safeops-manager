@@ -863,161 +863,83 @@ export function RemoteScriptsPanel({
         </div>
       ) : null}
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)]">
-        <form
-          onSubmit={handleCreateScript}
-          className="rounded-2xl border border-surface-border bg-white p-5 shadow-sm"
-        >
-          <h3 className="section-title">Cadastrar script local</h3>
+      <form
+        onSubmit={handleCreateScript}
+        className="max-w-3xl rounded-2xl border border-surface-border bg-white p-5 shadow-sm"
+      >
+        <h3 className="section-title">Cadastrar script local</h3>
 
-          <p className="mt-2 text-sm text-slate-600">
-            Scripts locais ficam registrados no SafeOps para revisão e também aparecem no mesmo campo de busca dos scripts.
-          </p>
+        <p className="mt-2 text-sm text-slate-600">
+          Scripts locais ficam registrados no SafeOps para revisão e também aparecem no mesmo campo de busca dos scripts.
+        </p>
 
-          <div className="mt-5 space-y-4">
-            <FieldLabel label="Nome do script">
-              <input
-                className={inputClassName}
-                value={scriptName}
-                onChange={(event) => setScriptName(event.target.value)}
-                placeholder="Ex: Limpeza de arquivos temporários"
-                required
-              />
-            </FieldLabel>
+        <div className="mt-5 space-y-4">
+          <FieldLabel label="Nome do script">
+            <input
+              className={inputClassName}
+              value={scriptName}
+              onChange={(event) => setScriptName(event.target.value)}
+              placeholder="Ex: Limpeza de arquivos temporários"
+              required
+            />
+          </FieldLabel>
 
-            <FieldLabel label="Descrição">
-              <textarea
-                className={inputClassName}
-                value={scriptDescription}
-                onChange={(event) => setScriptDescription(event.target.value)}
-                rows={3}
-                placeholder="Explique o objetivo do script e quando ele deve ser usado."
-              />
-            </FieldLabel>
+          <FieldLabel label="Descrição">
+            <textarea
+              className={inputClassName}
+              value={scriptDescription}
+              onChange={(event) => setScriptDescription(event.target.value)}
+              rows={3}
+              placeholder="Explique o objetivo do script e quando ele deve ser usado."
+            />
+          </FieldLabel>
 
-            <FieldLabel label="Tipo">
-              <select
-                className={inputClassName}
-                value={scriptShell}
-                onChange={(event) =>
-                  setScriptShell(event.target.value as LocalScript['shell'])
-                }
-              >
-                <option value="powershell">PowerShell</option>
-                <option value="cmd">CMD/BAT</option>
-                <option value="bash">Bash</option>
-              </select>
-            </FieldLabel>
-
-            <FieldLabel label="Conteúdo do script">
-              <textarea
-                className={`${inputClassName} font-mono`}
-                value={scriptBody}
-                onChange={(event) => setScriptBody(event.target.value)}
-                rows={12}
-                placeholder="$ErrorActionPreference = 'Stop'&#10;Write-Output 'Hello SafeOps'"
-                required
-              />
-            </FieldLabel>
-
-            {isAdmin ? (
-              <label className="flex items-start gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={createAsSafesys}
-                  onChange={(event) => setCreateAsSafesys(event.target.checked)}
-                  className="mt-1"
-                />
-                <span>Cadastrar como script aprovado da biblioteca Safesys</span>
-              </label>
-            ) : null}
-
-            <button
-              type="submit"
-              className={secondaryButtonClassName}
-              disabled={isCreating}
+          <FieldLabel label="Tipo">
+            <select
+              className={inputClassName}
+              value={scriptShell}
+              onChange={(event) =>
+                setScriptShell(event.target.value as LocalScript['shell'])
+              }
             >
-              {isCreating ? 'Salvando...' : 'Salvar script local'}
-            </button>
-          </div>
-        </form>
+              <option value="powershell">PowerShell</option>
+              <option value="cmd">CMD/BAT</option>
+              <option value="bash">Bash</option>
+            </select>
+          </FieldLabel>
 
-        <div className="rounded-2xl border border-surface-border bg-white p-5 shadow-sm">
-          <h3 className="section-title">Scripts cadastrados localmente</h3>
-          <p className="mt-1 text-sm text-slate-600">
-            Scripts locais ficam disponíveis no campo principal de busca.
-          </p>
+          <FieldLabel label="Conteúdo do script">
+            <textarea
+              className={`${inputClassName} font-mono`}
+              value={scriptBody}
+              onChange={(event) => setScriptBody(event.target.value)}
+              rows={12}
+              placeholder="$ErrorActionPreference = 'Stop'&#10;Write-Output 'Hello SafeOps'"
+              required
+            />
+          </FieldLabel>
 
-          <div className="mt-5 overflow-hidden rounded-xl border border-slate-200">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Script
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Origem
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Tipo
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Status
-                  </th>
-                </tr>
-              </thead>
+          {isAdmin ? (
+            <label className="flex items-start gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={createAsSafesys}
+                onChange={(event) => setCreateAsSafesys(event.target.checked)}
+                className="mt-1"
+              />
+              <span>Cadastrar como script aprovado da biblioteca Safesys</span>
+            </label>
+          ) : null}
 
-              <tbody className="divide-y divide-slate-100 bg-white">
-                {isLoadingLocalScripts ? (
-                  <tr>
-                    <td className="px-4 py-6 text-slate-500" colSpan={4}>
-                      Carregando scripts...
-                    </td>
-                  </tr>
-                ) : localScripts.length === 0 ? (
-                  <tr>
-                    <td className="px-4 py-6 text-slate-500" colSpan={4}>
-                      Nenhum script local cadastrado.
-                    </td>
-                  </tr>
-                ) : (
-                  localScripts.map((script) => (
-                    <tr key={script.id}>
-                      <td className="px-4 py-3">
-                        <p className="font-semibold text-brand-900">
-                          {script.name}
-                        </p>
-                        <p className="mt-1 line-clamp-2 text-xs text-slate-500">
-                          {script.description ?? 'Sem descrição.'}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-400">
-                          Criado em {formatDate(script.created_at)}
-                        </p>
-                      </td>
-
-                      <td className="px-4 py-3 text-slate-700">
-                        {getScriptSourceLabel(script)}
-                      </td>
-
-                      <td className="px-4 py-3 text-slate-700">
-                        {script.shell}
-                      </td>
-
-                      <td className="px-4 py-3 text-slate-700">
-                        {script.status === 'approved'
-                          ? 'Aprovado'
-                          : script.status === 'pending_review'
-                            ? 'Pendente'
-                            : 'Desativado'}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          <button
+            type="submit"
+            className={secondaryButtonClassName}
+            disabled={isCreating}
+          >
+            {isCreating ? 'Salvando...' : 'Salvar script local'}
+          </button>
         </div>
-      </div>
+      </form>
     </div>
   );
 }
