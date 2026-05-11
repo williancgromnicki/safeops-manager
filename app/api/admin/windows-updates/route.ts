@@ -20,6 +20,19 @@ type CustomerRow = {
   tactical_client_id: number | null;
 };
 
+type RunningInstallJobRow = {
+  id: string;
+  parameters: Record<string, unknown> | null;
+};
+
+type UpdateSummaryRow = {
+  agent_id: string;
+  hostname: string;
+  updates_approved: number;
+  updates_pending: number;
+  needs_reboot: boolean;
+};
+
 function cleanString(value?: string | null): string | null {
   const cleaned = value?.trim();
 
@@ -134,6 +147,103 @@ async function resolveTacticalClientId(customer: CustomerRow): Promise<number> {
   return tacticalClientId;
 }
 
+async function reconcileRunningInstallJobs(input: {
+  customerId: string;
+  devices: UpdateSummaryRow[];
+}) {
+  const supabaseAdmin = getSupabaseAdmin();
+
+  const { data, error } = await supabaseAdmin
+    .from('remote_jobs')
+    .select('id, parameters')
+    .eq('customer_id', input.customerId)
+    .eq('job_type', 'windows_update_install')
+    .eq('status', 'running')
+    .order('created_at', { ascending: false })
+    .limit(50);
+
+  if (error) {
+    return;
+  }
+
+  const jobs = (data ?? []) as unknown as RunningInstallJobRow[];
+
+  await Promise.all(
+    jobs.map(async (job) => {
+      const agentId =
+        typeof job.parameters?.agent_id === 'string'
+          ? job.parameters.agent_id
+          : null;
+
+      if (!agentId) {
+        return;
+      }
+
+      const device = input.devices.find((item) => item.agent_id === agentId);
+
+      if (!device) {
+        return;
+      }
+
+      if (device.updates_approved > 0) {
+        await supabaseAdmin
+          .from('remote_jobs')
+          .update({
+            result: {
+              status: 'pending',
+              message:
+                'Instalação solicitada. Ainda existem updates aprovados pendentes para este dispositivo.',
+              hostname: device.hostname,
+              updates_pending: device.updates_pending,
+              updates_approved: device.updates_approved,
+              needs_reboot: device.needs_reboot,
+              last_checked_at: new Date().toISOString(),
+            },
+          })
+          .eq('id', job.id);
+
+        return;
+      }
+
+      await supabaseAdmin
+        .from('remote_jobs')
+        .update({
+          status: 'success',
+          result: {
+            status: device.needs_reboot
+              ? 'completed_reboot_pending'
+              : 'completed',
+            message: device.needs_reboot
+              ? 'Instalação concluída. Reinicialização pendente.'
+              : 'Instalação concluída ou sem updates aprovados pendentes.',
+            hostname: device.hostname,
+            updates_pending: device.updates_pending,
+            updates_approved: device.updates_approved,
+            needs_reboot: device.needs_reboot,
+            checked_at: new Date().toISOString(),
+          },
+          finished_at: new Date().toISOString(),
+        })
+        .eq('id', job.id);
+
+      await supabaseAdmin.from('remote_job_logs').insert({
+        job_id: job.id,
+        level: 'info',
+        message: device.needs_reboot
+          ? 'Instalação concluída com reinicialização pendente.'
+          : 'Instalação concluída.',
+        payload: {
+          hostname: device.hostname,
+          updates_pending: device.updates_pending,
+          updates_approved: device.updates_approved,
+          needs_reboot: device.needs_reboot,
+        },
+      });
+    }),
+  );
+}
+
+
 export async function GET(request: NextRequest) {
   try {
     const user = await getAuthenticatedUser();
@@ -190,6 +300,11 @@ export async function GET(request: NextRequest) {
 
     const tacticalClientId = await resolveTacticalClientId(customer);
     const devices = await fetchWindowsUpdateSummariesByClient(tacticalClientId);
+
+    await reconcileRunningInstallJobs({
+      customerId: customer.id,
+      devices,
+    });
 
     const totals = devices.reduce(
       (acc, device) => {
