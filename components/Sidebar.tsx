@@ -44,6 +44,12 @@ const OPERATIONS_NAV_ITEMS: NavItem[] = [
     roles: ['admin', 'client'],
   },
   {
+    href: '/admin/scripts',
+    label: 'Scripts remotos',
+    preserveCustomer: true,
+    roles: ['admin', 'client'],
+  },
+  {
     href: '/operations/software-install',
     label: 'Instalar software',
     preserveCustomer: true,
