@@ -184,10 +184,14 @@ async function assertUpdateBelongsToAgent(input: {
   updateId: number;
 }) {
   const updates = await fetchTrmmWindowsUpdatesByAgent(input.agentId);
-  const update = updates.find((item) => item.id === input.updateId);
+  const update = updates.find(
+    (item) => String(item.id) === String(input.updateId),
+  );
 
   if (!update) {
-    throw new Error('Este update não pertence ao agente selecionado.');
+    throw new Error(
+      'Não foi possível confirmar este update no dispositivo selecionado. Atualize a tela e tente novamente.',
+    );
   }
 
   return update;
@@ -276,7 +280,11 @@ export async function POST(request: NextRequest) {
       payload.action === 'ignore-update' ||
       payload.action === 'reset-update'
     ) {
-      if (!payload.updateId) {
+      if (
+        payload.updateId === undefined ||
+        payload.updateId === null ||
+        Number.isNaN(Number(payload.updateId))
+      ) {
         return NextResponse.json(
           {
             ok: false,
@@ -286,13 +294,15 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      const updateId = Number(payload.updateId);
+
       const update = await assertUpdateBelongsToAgent({
         agentId,
-        updateId: payload.updateId,
+        updateId,
       });
 
       const result = await updateTrmmWindowsUpdateAction({
-        updateId: payload.updateId,
+        updateId,
         action: mapUpdateAction(payload.action),
       });
 

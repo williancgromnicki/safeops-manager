@@ -608,23 +608,44 @@ export function WindowsUpdatesPanel({ customerId }: WindowsUpdatesPanelProps) {
                           </div>
 
                           <div className="flex shrink-0 flex-wrap gap-2">
-                            <button
-                              type="button"
-                              className={secondaryButtonClassName}
-                              disabled={Boolean(runningAction)}
-                              onClick={() =>
-                                runAction({
-                                  action: 'approve-update',
-                                  agentId: selectedDevice.agent_id,
-                                  updateId: update.id,
-                                })
-                              }
-                            >
-                              {runningAction ===
-                              `approve-update:${actionKey}`
-                                ? 'Aprovando...'
-                                : 'Aprovar'}
-                            </button>
+                            {normalize(update.action) === 'approve' ? (
+                              <button
+                                type="button"
+                                className={buttonClassName}
+                                disabled={Boolean(runningAction)}
+                                onClick={() =>
+                                  runAction({
+                                    action: 'install-approved',
+                                    agentId: selectedDevice.agent_id,
+                                    confirmMessage:
+                                      'Instalar os updates aprovados neste dispositivo? Em servidores, valide a janela de manutenção antes de prosseguir.',
+                                  })
+                                }
+                              >
+                                {runningAction ===
+                                `install-approved:${selectedDevice.agent_id}:agent`
+                                  ? 'Instalando...'
+                                  : 'Instalar aprovados'}
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                className={secondaryButtonClassName}
+                                disabled={Boolean(runningAction)}
+                                onClick={() =>
+                                  runAction({
+                                    action: 'approve-update',
+                                    agentId: selectedDevice.agent_id,
+                                    updateId: update.id,
+                                  })
+                                }
+                              >
+                                {runningAction ===
+                                `approve-update:${actionKey}`
+                                  ? 'Aprovando...'
+                                  : 'Aprovar'}
+                              </button>
+                            )}
 
                             <button
                               type="button"
