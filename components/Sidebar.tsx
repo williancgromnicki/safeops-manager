@@ -44,6 +44,12 @@ const OPERATIONS_NAV_ITEMS: NavItem[] = [
     roles: ['admin', 'client'],
   },
   {
+  href: '/admin/windows-updates',
+  label: 'Windows Updates',
+  preserveCustomer: true,
+  roles: ['admin', 'client'],
+  },
+  {
     href: '/admin/scripts',
     label: 'Scripts remotos',
     preserveCustomer: true,
