@@ -273,6 +273,7 @@ export function RemoteScriptsPanel({
   const [isLoadingDevices, setIsLoadingDevices] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
+  const [isApproving, setIsApproving] = useState(false);
   const [status, setStatus] = useState<StatusMessage>(null);
   const [executionResult, setExecutionResult] = useState<{
     stdout?: string;
@@ -526,6 +527,65 @@ export function RemoteScriptsPanel({
     }
   }
 
+  async function handleApproveSelectedScript() {
+    if (!selectedScript || selectedScript.source !== 'local') {
+      setStatus({
+        type: 'error',
+        message: 'Selecione um script local pendente para aprovação.',
+      });
+      return;
+    }
+
+    if (!isAdmin) {
+      setStatus({
+        type: 'error',
+        message: 'Apenas Admin Safesys pode aprovar scripts.',
+      });
+      return;
+    }
+
+    try {
+      setIsApproving(true);
+      setStatus(null);
+
+      const response = await fetch(
+        `/api/admin/scripts/${encodeURIComponent(selectedScript.id)}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          cache: 'no-store',
+          body: JSON.stringify({
+            status: 'approved',
+          }),
+        },
+      );
+
+      const data = await parseLocalScriptsResponse(response);
+
+      if (!data.ok) {
+        throw new Error(data.error ?? 'Erro ao aprovar script.');
+      }
+
+      setStatus({
+        type: 'success',
+        message: data.message ?? 'Script aprovado com sucesso.',
+      });
+
+      await loadLocalScripts();
+      router.refresh();
+    } catch (error) {
+      setStatus({
+        type: 'error',
+        message:
+          error instanceof Error ? error.message : 'Erro ao aprovar script.',
+      });
+    } finally {
+      setIsApproving(false);
+    }
+  }
+
   async function handleExecuteScript(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -769,7 +829,22 @@ export function RemoteScriptsPanel({
 
             {!canExecuteScript(selectedScript) ? (
               <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                Este script local ainda está pendente de revisão e não pode ser executado até ser aprovado.
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p>
+                    Este script local ainda está pendente de revisão e não pode ser executado até ser aprovado.
+                  </p>
+
+                  {isAdmin && selectedScript.source === 'local' ? (
+                    <button
+                      type="button"
+                      onClick={handleApproveSelectedScript}
+                      disabled={isApproving}
+                      className="inline-flex w-fit items-center justify-center rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-800 shadow-sm transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isApproving ? 'Aprovando...' : 'Clique aqui para aprovar o script'}
+                    </button>
+                  ) : null}
+                </div>
               </div>
             ) : null}
           </div>
@@ -781,6 +856,7 @@ export function RemoteScriptsPanel({
             className={primaryButtonClassName}
             disabled={
               isExecuting ||
+              isApproving ||
               isLoadingLibrary ||
               isLoadingLocalScripts ||
               isLoadingDevices ||
