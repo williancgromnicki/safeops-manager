@@ -1,0 +1,30 @@
+No arquivo components/Sidebar.tsx, adicionar o item "Scripts remotos" no array OPERATIONS_NAV_ITEMS.
+
+Sugestão: inserir logo depois de Jobs remotos:
+
+{
+  href: '/admin/scripts',
+  label: 'Scripts remotos',
+  preserveCustomer: true,
+  roles: ['admin', 'client'],
+},
+
+O bloco ficará assim:
+
+const OPERATIONS_NAV_ITEMS: NavItem[] = [
+  {
+    href: '/admin/remote-jobs',
+    label: 'Jobs remotos',
+    preserveCustomer: true,
+    roles: ['admin', 'client'],
+  },
+  {
+    href: '/admin/scripts',
+    label: 'Scripts remotos',
+    preserveCustomer: true,
+    roles: ['admin', 'client'],
+  },
+  ...
+];
+
+Não remova os outros itens.
