@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 
 import { DataTable } from '@/components/DataTable';
 import { EmptyState } from '@/components/EmptyState';
+import { RemoteJobsRefreshButton } from '@/components/RemoteJobsRefreshButton';
 import { resolveCurrentCustomer } from '@/lib/data/get-current-customer';
 import { createClient } from '@/lib/supabase/server';
 
@@ -103,15 +104,31 @@ function translateJobType(value: string): string {
   }
 
   if (normalized === 'remote_background') {
-    return 'Remote background';
+    return 'Ação remota';
   }
 
   if (normalized === 'remote_background_session') {
-    return 'Sessão Remote Background';
+    return 'Sessão remota';
   }
 
   if (normalized === 'take_control_session') {
-    return 'Sessão Take Control';
+    return 'Sessão de acesso remoto';
+  }
+
+  if (normalized === 'script_execution') {
+    return 'Execução de script';
+  }
+
+  if (normalized === 'windows_update_scan') {
+    return 'Verificação de updates';
+  }
+
+  if (normalized === 'windows_update_approval') {
+    return 'Ação de update';
+  }
+
+  if (normalized === 'windows_update_install') {
+    return 'Instalação de updates';
   }
 
   return value;
@@ -175,17 +192,59 @@ function formatParameters(value: Record<string, unknown> | null): string {
   const packageId =
     typeof value.package_id === 'string' ? value.package_id : null;
   const action = typeof value.action === 'string' ? value.action : null;
+  const kb = typeof value.kb === 'string' ? value.kb : null;
+  const title = typeof value.title === 'string' ? value.title : null;
 
   if (packageId) {
     return `Pacote: ${packageId}`;
   }
 
+  if (kb && title) {
+    return `${kb} · ${title}`;
+  }
+
+  if (kb) {
+    return kb;
+  }
+
   if (action) {
-    return `Ação: ${action}`;
+    const actionLabels: Record<string, string> = {
+      scan: 'Verificar updates',
+      'install-approved': 'Instalar aprovados',
+      'approve-update': 'Aprovar update',
+      'ignore-update': 'Ignorar update',
+      'reset-update': 'Limpar ação',
+    };
+
+    return actionLabels[action] ?? `Ação: ${action}`;
   }
 
   if (hostname) {
     return `Host: ${hostname}`;
+  }
+
+  return JSON.stringify(value);
+}
+
+function formatResult(value: Record<string, unknown> | null): string {
+  if (!value || Object.keys(value).length === 0) {
+    return '—';
+  }
+
+  const message = typeof value.message === 'string' ? value.message : null;
+  const status = typeof value.status === 'string' ? value.status : null;
+  const reboot = typeof value.needs_reboot === 'boolean' ? value.needs_reboot : null;
+
+  if (message && reboot !== null) {
+    return `${message} Reboot pendente: ${reboot ? 'Sim' : 'Não'}.`;
+  }
+
+  if (message) {
+    return message;
+  }
+
+  if (status) {
+    return status;
   }
 
   return JSON.stringify(value);
@@ -260,16 +319,20 @@ export default async function RemoteJobsPage({
               <span className="font-semibold text-slate-800">
                 {activeCustomer.customerName}
               </span>
-              , incluindo sessões remotas, instalações, remote background e
-              futuras automações.
+              , incluindo sessões remotas, instalações, scripts, updates e ações
+              operacionais.
             </p>
           </div>
 
-          <div className="rounded-xl border border-brand-100 bg-brand-50 px-4 py-3 text-sm text-brand-900">
-            <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">
-              Últimos registros
-            </p>
-            <p className="mt-1 text-2xl font-bold">{jobs.length}</p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="rounded-xl border border-brand-100 bg-brand-50 px-4 py-3 text-sm text-brand-900">
+              <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">
+                Últimos registros
+              </p>
+              <p className="mt-1 text-2xl font-bold">{jobs.length}</p>
+            </div>
+
+            <RemoteJobsRefreshButton />
           </div>
         </div>
       </div>
@@ -290,6 +353,7 @@ export default async function RemoteJobsPage({
               'Status',
               'Comando',
               'Parâmetros',
+              'Resultado',
               'Solicitante',
               'Finalizado em',
               'Erro',
@@ -323,6 +387,10 @@ export default async function RemoteJobsPage({
 
                 <td className="max-w-xs px-4 py-3 text-sm">
                   {formatParameters(job.parameters)}
+                </td>
+
+                <td className="max-w-sm px-4 py-3 text-sm">
+                  {formatResult(job.result)}
                 </td>
 
                 <td className="px-4 py-3 text-sm">
