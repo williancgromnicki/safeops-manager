@@ -229,7 +229,7 @@ export async function fetchWindowsUpdateSummariesByClient(
           agent,
           updates,
         });
-      } catch (error) {
+      } catch {
         return summarizeWindowsUpdates({
           agent,
           updates: [],
