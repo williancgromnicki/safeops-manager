@@ -184,12 +184,12 @@ function getScriptPlatforms(script: UnifiedScript): string {
   return 'All';
 }
 
-function canExecuteScript(script: UnifiedScript, isAdmin: boolean): boolean {
+function canExecuteScript(script: UnifiedScript): boolean {
   if (script.source === 'library') {
     return true;
   }
 
-  return script.status === 'approved' || isAdmin;
+  return script.status === 'approved';
 }
 
 async function parseApiResponse(response: Response): Promise<ApiResponse> {
@@ -537,7 +537,7 @@ export function RemoteScriptsPanel({
       return;
     }
 
-    if (!canExecuteScript(selectedScript, isAdmin)) {
+    if (!canExecuteScript(selectedScript)) {
       setStatus({
         type: 'error',
         message: 'Este script ainda não está aprovado para execução.',
@@ -767,9 +767,9 @@ export function RemoteScriptsPanel({
               </p>
             </div>
 
-            {!canExecuteScript(selectedScript, isAdmin) ? (
+            {!canExecuteScript(selectedScript) ? (
               <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                Este script local ainda está pendente de revisão e não pode ser executado por usuários do cliente.
+                Este script local ainda está pendente de revisão e não pode ser executado até ser aprovado.
               </div>
             ) : null}
           </div>
@@ -786,7 +786,7 @@ export function RemoteScriptsPanel({
               isLoadingDevices ||
               !selectedScriptKey ||
               !selectedDeviceId ||
-              (selectedScript ? !canExecuteScript(selectedScript, isAdmin) : true)
+              (selectedScript ? !canExecuteScript(selectedScript) : true)
             }
           >
             {isExecuting ? 'Executando...' : 'Executar script'}

@@ -118,6 +118,7 @@ export async function GET(request: NextRequest) {
     }
 
     const accessRows = await getUserAccessRows(user.id);
+    const isAdmin = isSafesysAdmin(accessRows);
 
     if (!canAccessCustomer({ accessRows, customerId })) {
       return NextResponse.json(
@@ -132,6 +133,27 @@ export async function GET(request: NextRequest) {
 
     const supabaseAdmin = getSupabaseAdmin();
 
+    if (isAdmin) {
+      // Admin Safesys precisa enxergar todos os scripts locais para revisão,
+      // inclusive scripts customer/pending_review criados em qualquer cliente.
+      const { data, error } = await supabaseAdmin
+        .from('remote_scripts')
+        .select(
+          'id, customer_id, scope, name, description, shell, script_body, status, created_by_email, created_at, updated_at',
+        )
+        .neq('status', 'disabled')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        throw new Error(`Erro ao listar scripts locais: ${error.message}`);
+      }
+
+      return NextResponse.json({
+        ok: true,
+        scripts: data ?? [],
+      });
+    }
+
     const [safesysResult, customerResult] = await Promise.all([
       supabaseAdmin
         .from('remote_scripts')
@@ -139,7 +161,7 @@ export async function GET(request: NextRequest) {
           'id, customer_id, scope, name, description, shell, script_body, status, created_by_email, created_at, updated_at',
         )
         .eq('scope', 'safesys')
-        .neq('status', 'disabled')
+        .eq('status', 'approved')
         .order('name', { ascending: true }),
 
       supabaseAdmin

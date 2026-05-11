@@ -174,7 +174,7 @@ async function prepareLocalScript(input: {
     throw new Error('Este script local não pertence ao cliente selecionado.');
   }
 
-  if (script.status !== 'approved' && !input.isAdmin) {
+  if (script.status !== 'approved') {
     throw new Error('Este script ainda está pendente de revisão e não pode ser executado.');
   }
 
