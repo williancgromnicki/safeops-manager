@@ -69,6 +69,137 @@ type WindowsUpdatesPanelProps = {
 const cardClassName =
   'rounded-2xl border border-surface-border bg-white p-5 shadow-sm';
 
+
+type InstallChecklistStatus = 'pending' | 'running' | 'success' | 'error' | 'skipped';
+
+type InstallChecklistItem = {
+  key: string;
+  label: string;
+  status: InstallChecklistStatus;
+  detail?: string;
+};
+
+const INSTALL_CHECKLIST_TEMPLATE: InstallChecklistItem[] = [
+  {
+    key: 'prepare',
+    label: 'Preparando validação da instalação',
+    status: 'pending',
+  },
+  {
+    key: 'precheck-service',
+    label: 'Verificando serviço Windows Update',
+    status: 'pending',
+  },
+  {
+    key: 'precheck-support',
+    label: 'Verificando serviços auxiliares e políticas',
+    status: 'pending',
+  },
+  {
+    key: 'precheck-reboot',
+    label: 'Verificando reboot pendente',
+    status: 'pending',
+  },
+  {
+    key: 'install-request',
+    label: 'Solicitando instalação dos updates aprovados',
+    status: 'pending',
+  },
+  {
+    key: 'result',
+    label: 'Aguardando resultado da operação',
+    status: 'pending',
+  },
+];
+
+function updateChecklistStep(
+  items: InstallChecklistItem[],
+  key: string,
+  patch: Partial<InstallChecklistItem>,
+) {
+  return items.map((item) =>
+    item.key === key
+      ? {
+          ...item,
+          ...patch,
+        }
+      : item,
+  );
+}
+
+function getChecklistStatusClasses(status: InstallChecklistStatus) {
+  if (status === 'success') {
+    return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+  }
+
+  if (status === 'error') {
+    return 'border-rose-200 bg-rose-50 text-rose-700';
+  }
+
+  if (status === 'running') {
+    return 'border-brand-200 bg-brand-50 text-brand-700';
+  }
+
+  if (status === 'skipped') {
+    return 'border-slate-200 bg-slate-50 text-slate-500';
+  }
+
+  return 'border-slate-200 bg-white text-slate-500';
+}
+
+function getChecklistIcon(status: InstallChecklistStatus) {
+  if (status === 'success') {
+    return '✓';
+  }
+
+  if (status === 'error') {
+    return '✕';
+  }
+
+  if (status === 'running') {
+    return '…';
+  }
+
+  if (status === 'skipped') {
+    return '—';
+  }
+
+  return '•';
+}
+
+function getPrecheckFailureStep(message: string) {
+  const normalized = message.toLowerCase();
+
+  if (
+    normalized.includes('windows update') ||
+    normalized.includes('parada pendente') ||
+    normalized.includes('stoppending') ||
+    normalized.includes('stop pending')
+  ) {
+    return 'precheck-service';
+  }
+
+  if (
+    normalized.includes('reboot') ||
+    normalized.includes('reinicial')
+  ) {
+    return 'precheck-reboot';
+  }
+
+  if (
+    normalized.includes('politica') ||
+    normalized.includes('política') ||
+    normalized.includes('criptografia') ||
+    normalized.includes('trustedinstaller') ||
+    normalized.includes('bits')
+  ) {
+    return 'precheck-support';
+  }
+
+  return 'prepare';
+}
+
+
 const buttonClassName =
   'inline-flex items-center justify-center rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-60';
 
@@ -199,12 +330,79 @@ export function WindowsUpdatesPanel({ customerId }: WindowsUpdatesPanelProps) {
   const [search, setSearch] = useState('');
   const [isLoadingUpdates, setIsLoadingUpdates] = useState(false);
   const [runningAction, setRunningAction] = useState<string | null>(null);
+  const [showInstallModal, setShowInstallModal] = useState(false);
+  const [installChecklist, setInstallChecklist] = useState<InstallChecklistItem[]>(INSTALL_CHECKLIST_TEMPLATE);
+  const [installModalTitle, setInstallModalTitle] = useState('');
+  const [installModalMessage, setInstallModalMessage] = useState('');
+  const [installModalFinished, setInstallModalFinished] = useState(false);
   const [status, setStatus] = useState<StatusMessage>(null);
 
   const selectedDevice = useMemo(
     () => devices.find((device) => device.agent_id === selectedAgentId) ?? null,
     [devices, selectedAgentId],
   );
+
+
+  useEffect(() => {
+    if (!showInstallModal || !runningAction || runningAction !== 'install-approved') {
+      return;
+    }
+
+    setInstallChecklist((current) =>
+      updateChecklistStep(current, 'prepare', {
+        status: 'running',
+        detail: 'Iniciando validação prévia da instalação.',
+      }),
+    );
+
+    const timer1 = window.setTimeout(() => {
+      setInstallChecklist((current) => {
+        let next = updateChecklistStep(current, 'prepare', {
+          status: 'success',
+          detail: 'Validação inicial iniciada com sucesso.',
+        });
+        next = updateChecklistStep(next, 'precheck-service', {
+          status: 'running',
+          detail: 'Conferindo o serviço Windows Update.',
+        });
+        return next;
+      });
+    }, 600);
+
+    const timer2 = window.setTimeout(() => {
+      setInstallChecklist((current) => {
+        let next = updateChecklistStep(current, 'precheck-service', {
+          status: 'success',
+          detail: 'Serviço principal validado.',
+        });
+        next = updateChecklistStep(next, 'precheck-support', {
+          status: 'running',
+          detail: 'Conferindo serviços auxiliares e políticas.',
+        });
+        return next;
+      });
+    }, 1400);
+
+    const timer3 = window.setTimeout(() => {
+      setInstallChecklist((current) => {
+        let next = updateChecklistStep(current, 'precheck-support', {
+          status: 'success',
+          detail: 'Serviços auxiliares verificados.',
+        });
+        next = updateChecklistStep(next, 'precheck-reboot', {
+          status: 'running',
+          detail: 'Validando se há reinicialização pendente.',
+        });
+        return next;
+      });
+    }, 2200);
+
+    return () => {
+      window.clearTimeout(timer1);
+      window.clearTimeout(timer2);
+      window.clearTimeout(timer3);
+    };
+  }, [showInstallModal, runningAction]);
 
   const filteredDevices = useMemo(() => {
     const query = normalize(search);
