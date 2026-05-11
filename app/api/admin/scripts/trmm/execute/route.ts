@@ -42,6 +42,7 @@ type LocalScriptRow = {
   shell: string;
   script_body: string;
   status: string;
+  created_by_user_id: string | null;
 };
 
 type PreparedScript = {
@@ -145,13 +146,16 @@ async function getDevice(input: {
 async function prepareLocalScript(input: {
   scriptId: string;
   customerId: string;
+  userId: string;
   isAdmin: boolean;
 }): Promise<PreparedScript> {
   const supabaseAdmin = getSupabaseAdmin();
 
   const { data, error } = await supabaseAdmin
     .from('remote_scripts')
-    .select('id, customer_id, scope, name, description, shell, script_body, status')
+    .select(
+      'id, customer_id, scope, name, description, shell, script_body, status, created_by_user_id',
+    )
     .eq('id', input.scriptId)
     .maybeSingle();
 
@@ -165,16 +169,18 @@ async function prepareLocalScript(input: {
 
   const script = data as LocalScriptRow;
 
-  const canUseScript =
-    script.scope === 'safesys' ||
-    script.customer_id === input.customerId ||
-    input.isAdmin;
+  const isSameCustomer = script.customer_id === input.customerId;
+  const ownsScript = script.created_by_user_id === input.userId;
 
-  if (!canUseScript) {
+  if (!input.isAdmin && !isSameCustomer) {
     throw new Error('Este script local não pertence ao cliente selecionado.');
   }
 
-  if (script.status !== 'approved') {
+  if (!input.isAdmin && !ownsScript) {
+    throw new Error('Você pode visualizar este script local, mas apenas o autor pode executá-lo.');
+  }
+
+  if (script.status !== 'approved' && !input.isAdmin) {
     throw new Error('Este script ainda está pendente de revisão e não pode ser executado.');
   }
 
@@ -359,6 +365,7 @@ export async function POST(request: NextRequest) {
         ? await prepareLocalScript({
             scriptId: String(payload.scriptId),
             customerId,
+            userId: user.id,
             isAdmin,
           })
         : await prepareLibraryScript({

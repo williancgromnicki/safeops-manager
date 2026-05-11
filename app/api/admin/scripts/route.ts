@@ -134,12 +134,12 @@ export async function GET(request: NextRequest) {
     const supabaseAdmin = getSupabaseAdmin();
 
     if (isAdmin) {
-      // Admin Safesys precisa enxergar todos os scripts locais para revisão,
-      // inclusive scripts customer/pending_review criados em qualquer cliente.
+      // Admin Safesys vê todos os scripts locais não desativados,
+      // independentemente de cliente, autor, escopo ou status.
       const { data, error } = await supabaseAdmin
         .from('remote_scripts')
         .select(
-          'id, customer_id, scope, name, description, shell, script_body, status, created_by_email, created_at, updated_at',
+          'id, customer_id, scope, name, description, shell, script_body, status, created_by_user_id, created_by_email, created_at, updated_at',
         )
         .neq('status', 'disabled')
         .order('created_at', { ascending: false });
@@ -154,37 +154,25 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const [safesysResult, customerResult] = await Promise.all([
-      supabaseAdmin
-        .from('remote_scripts')
-        .select(
-          'id, customer_id, scope, name, description, shell, script_body, status, created_by_email, created_at, updated_at',
-        )
-        .eq('scope', 'safesys')
-        .eq('status', 'approved')
-        .order('name', { ascending: true }),
+    // Usuário comum vê scripts locais do cliente.
+    // A biblioteca compartilhada vem do TRMM em /api/admin/scripts/trmm.
+    // A execução de script local de outro usuário fica bloqueada no endpoint de execução.
+    const { data, error } = await supabaseAdmin
+      .from('remote_scripts')
+      .select(
+        'id, customer_id, scope, name, description, shell, script_body, status, created_by_user_id, created_by_email, created_at, updated_at',
+      )
+      .eq('customer_id', customerId)
+      .neq('status', 'disabled')
+      .order('created_at', { ascending: false });
 
-      supabaseAdmin
-        .from('remote_scripts')
-        .select(
-          'id, customer_id, scope, name, description, shell, script_body, status, created_by_email, created_at, updated_at',
-        )
-        .eq('customer_id', customerId)
-        .neq('status', 'disabled')
-        .order('created_at', { ascending: false }),
-    ]);
-
-    if (safesysResult.error) {
-      throw new Error(`Erro ao listar scripts Safesys: ${safesysResult.error.message}`);
-    }
-
-    if (customerResult.error) {
-      throw new Error(`Erro ao listar scripts do cliente: ${customerResult.error.message}`);
+    if (error) {
+      throw new Error(`Erro ao listar scripts locais do cliente: ${error.message}`);
     }
 
     return NextResponse.json({
       ok: true,
-      scripts: [...(safesysResult.data ?? []), ...(customerResult.data ?? [])],
+      scripts: data ?? [],
     });
   } catch (error) {
     return NextResponse.json(
