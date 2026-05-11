@@ -117,7 +117,7 @@ async function resolveTacticalClientId(customer: CustomerRow): Promise<number> {
 
   if (!tacticalClientId) {
     throw new Error(
-      `Não foi possível localizar o cliente "${customer.name}" no TRMM.`,
+      `Não foi possível localizar o cliente "${customer.name}" na base de monitoramento.`,
     );
   }
 

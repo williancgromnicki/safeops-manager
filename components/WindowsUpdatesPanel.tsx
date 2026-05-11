@@ -2,11 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-type Customer = {
-  id: string;
-  name: string;
-};
-
 type WindowsUpdate = {
   id: number;
   kb?: string | null;
@@ -62,17 +57,14 @@ type WindowsUpdatesResponse = {
   devices?: WindowsUpdateDevice[];
 };
 
-type CustomersResponse = {
-  ok?: boolean;
-  customers?: Customer[];
-  data?: Customer[];
-  error?: string;
-};
-
 type StatusMessage = {
   type: 'success' | 'error' | 'info';
   message: string;
 } | null;
+
+type WindowsUpdatesPanelProps = {
+  customerId: string;
+};
 
 const cardClassName =
   'rounded-2xl border border-surface-border bg-white p-5 shadow-sm';
@@ -142,6 +134,7 @@ function actionLabel(action?: string | null): string {
 
   return 'Sem ação';
 }
+
 function getUpdateBadgeClass(update: WindowsUpdate): string {
   if (normalize(update.severity) === 'critical') {
     return 'border-red-200 bg-red-50 text-red-700';
@@ -154,33 +147,11 @@ function getUpdateBadgeClass(update: WindowsUpdate): string {
   return 'border-slate-200 bg-slate-50 text-slate-600';
 }
 
-function useSelectedCustomerId(): string {
-  const [customerId, setCustomerId] = useState('');
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const fromUrl =
-      params.get('customerId') ??
-      params.get('customer') ??
-      params.get('cliente') ??
-      '';
-
-    setCustomerId(fromUrl);
-  }, []);
-
-  return customerId;
-}
-
-export function WindowsUpdatesPanel() {
-  const customerIdFromUrl = useSelectedCustomerId();
-
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [selectedCustomerId, setSelectedCustomerId] = useState('');
+export function WindowsUpdatesPanel({ customerId }: WindowsUpdatesPanelProps) {
   const [devices, setDevices] = useState<WindowsUpdateDevice[]>([]);
   const [totals, setTotals] = useState<WindowsUpdatesResponse['totals']>();
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [isLoadingCustomers, setIsLoadingCustomers] = useState(false);
   const [isLoadingUpdates, setIsLoadingUpdates] = useState(false);
   const [runningAction, setRunningAction] = useState<string | null>(null);
   const [status, setStatus] = useState<StatusMessage>(null);
@@ -210,44 +181,11 @@ export function WindowsUpdatesPanel() {
     );
   }, [devices, search]);
 
-  async function loadCustomers() {
-    try {
-      setIsLoadingCustomers(true);
-
-      const response = await fetch('/api/admin/customers', {
-        cache: 'no-store',
-      });
-
-      const data = (await response.json()) as CustomersResponse;
-
-      if (!response.ok) {
-        throw new Error(data.error ?? 'Erro ao carregar clientes.');
-      }
-
-      const loadedCustomers = data.customers ?? data.data ?? [];
-
-      setCustomers(loadedCustomers);
-
-      const preferredCustomerId =
-        customerIdFromUrl ||
-        selectedCustomerId ||
-        loadedCustomers[0]?.id ||
-        '';
-
-      setSelectedCustomerId(preferredCustomerId);
-    } catch (error) {
-      setStatus({
-        type: 'error',
-        message:
-          error instanceof Error ? error.message : 'Erro ao carregar clientes.',
-      });
-    } finally {
-      setIsLoadingCustomers(false);
-    }
-  }
-
-  async function loadWindowsUpdates(customerId = selectedCustomerId) {
-    if (!customerId) {
+  async function loadWindowsUpdates(activeCustomerId = customerId) {
+    if (!activeCustomerId) {
+      setDevices([]);
+      setTotals(undefined);
+      setSelectedAgentId(null);
       return;
     }
 
@@ -256,7 +194,7 @@ export function WindowsUpdatesPanel() {
       setStatus(null);
 
       const response = await fetch(
-        `/api/admin/windows-updates?customerId=${encodeURIComponent(customerId)}`,
+        `/api/admin/windows-updates?customerId=${encodeURIComponent(activeCustomerId)}`,
         {
           cache: 'no-store',
         },
@@ -268,12 +206,21 @@ export function WindowsUpdatesPanel() {
         throw new Error(data.error ?? 'Erro ao carregar Windows Updates.');
       }
 
-      setDevices(data.devices ?? []);
+      const loadedDevices = data.devices ?? [];
+
+      setDevices(loadedDevices);
       setTotals(data.totals);
-      setSelectedAgentId(data.devices?.[0]?.agent_id ?? null);
+      setSelectedAgentId((current) => {
+        if (current && loadedDevices.some((device) => device.agent_id === current)) {
+          return current;
+        }
+
+        return loadedDevices[0]?.agent_id ?? null;
+      });
     } catch (error) {
       setDevices([]);
       setTotals(undefined);
+      setSelectedAgentId(null);
       setStatus({
         type: 'error',
         message:
@@ -287,15 +234,20 @@ export function WindowsUpdatesPanel() {
   }
 
   async function runAction(input: {
-    action: 'scan' | 'install-approved' | 'approve-update' | 'ignore-update' | 'reset-update';
+    action:
+      | 'scan'
+      | 'install-approved'
+      | 'approve-update'
+      | 'ignore-update'
+      | 'reset-update';
     agentId: string;
     updateId?: number;
     confirmMessage?: string;
   }) {
-    if (!selectedCustomerId) {
+    if (!customerId) {
       setStatus({
         type: 'error',
-        message: 'Selecione um cliente.',
+        message: 'Selecione um cliente no menu lateral.',
       });
       return;
     }
@@ -317,7 +269,7 @@ export function WindowsUpdatesPanel() {
         },
         cache: 'no-store',
         body: JSON.stringify({
-          customerId: selectedCustomerId,
+          customerId,
           agentId: input.agentId,
           updateId: input.updateId,
           action: input.action,
@@ -339,7 +291,7 @@ export function WindowsUpdatesPanel() {
         message: data.message ?? 'Ação enviada com sucesso.',
       });
 
-      await loadWindowsUpdates(selectedCustomerId);
+      await loadWindowsUpdates(customerId);
     } catch (error) {
       setStatus({
         type: 'error',
@@ -352,16 +304,9 @@ export function WindowsUpdatesPanel() {
   }
 
   useEffect(() => {
-    void loadCustomers();
+    void loadWindowsUpdates(customerId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customerIdFromUrl]);
-
-  useEffect(() => {
-    if (selectedCustomerId) {
-      void loadWindowsUpdates(selectedCustomerId);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCustomerId]);
+  }, [customerId]);
 
   return (
     <div className="space-y-6">
@@ -373,38 +318,23 @@ export function WindowsUpdatesPanel() {
           <h1 className="mt-1 text-2xl font-bold text-brand-950">
             Gestão de Windows Updates
           </h1>
-          <p className="mt-2 max-w-3xl text-sm text-slate-600">
-            Visualize e acione a base nativa de updates do TRMM. Nesta etapa, o
-            SafeOps não executa uma busca paralela: ele usa os updates já
-            detectados pelo agente.
-          </p>
         </div>
 
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <select
-            className={inputClassName}
-            value={selectedCustomerId}
-            onChange={(event) => setSelectedCustomerId(event.target.value)}
-            disabled={isLoadingCustomers}
-          >
-            <option value="">Selecione um cliente</option>
-            {customers.map((customer) => (
-              <option key={customer.id} value={customer.id}>
-                {customer.name}
-              </option>
-            ))}
-          </select>
-
-          <button
-            type="button"
-            className={secondaryButtonClassName}
-            disabled={!selectedCustomerId || isLoadingUpdates}
-            onClick={() => loadWindowsUpdates()}
-          >
-            {isLoadingUpdates ? 'Atualizando...' : 'Atualizar'}
-          </button>
-        </div>
+        <button
+          type="button"
+          className={secondaryButtonClassName}
+          disabled={!customerId || isLoadingUpdates}
+          onClick={() => loadWindowsUpdates(customerId)}
+        >
+          {isLoadingUpdates ? 'Atualizando...' : 'Atualizar'}
+        </button>
       </div>
+
+      {!customerId ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Selecione um cliente no menu lateral para visualizar as atualizações.
+        </div>
+      ) : null}
 
       {status ? (
         <div
@@ -473,7 +403,7 @@ export function WindowsUpdatesPanel() {
             <div>
               <h2 className="section-title">Dispositivos</h2>
               <p className="mt-1 text-sm text-slate-500">
-                Clique em um dispositivo para ver os updates detectados.
+                Clique em um dispositivo para ver as atualizações detectadas.
               </p>
             </div>
 
@@ -488,7 +418,7 @@ export function WindowsUpdatesPanel() {
           <div className="mt-5 max-h-[640px] space-y-3 overflow-y-auto pr-1">
             {isLoadingUpdates ? (
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                Carregando updates...
+                Carregando atualizações...
               </div>
             ) : filteredDevices.length === 0 ? (
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
@@ -546,7 +476,8 @@ export function WindowsUpdatesPanel() {
                   </div>
 
                   <p className="mt-3 line-clamp-2 text-xs text-slate-500">
-                    {device.operating_system ?? 'Sistema operacional não informado'}
+                    {device.operating_system ??
+                      'Sistema operacional não informado'}
                   </p>
                 </button>
               ))
@@ -632,8 +563,7 @@ export function WindowsUpdatesPanel() {
               <div className="space-y-3">
                 {selectedDevice.updates.length === 0 ? (
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                    Nenhum update pendente retornado pelo TRMM para este
-                    dispositivo.
+                    Nenhum update pendente encontrado para este dispositivo.
                   </div>
                 ) : (
                   selectedDevice.updates.map((update) => {
@@ -705,8 +635,7 @@ export function WindowsUpdatesPanel() {
                                   action: 'ignore-update',
                                   agentId: selectedDevice.agent_id,
                                   updateId: update.id,
-                                  confirmMessage:
-                                    'Ignorar este update no TRMM?',
+                                  confirmMessage: 'Ignorar este update?',
                                 })
                               }
                             >

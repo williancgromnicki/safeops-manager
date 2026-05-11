@@ -29,7 +29,12 @@ type WindowsUpdateActionPayload = {
   customerId?: string;
   agentId?: string;
   updateId?: number;
-  action?: 'scan' | 'install-approved' | 'approve-update' | 'ignore-update' | 'reset-update';
+  action?:
+    | 'scan'
+    | 'install-approved'
+    | 'approve-update'
+    | 'ignore-update'
+    | 'reset-update';
 };
 
 function cleanString(value?: string | null): string | null {
@@ -129,7 +134,7 @@ async function resolveTacticalClientId(customer: CustomerRow): Promise<number> {
 
   if (!tacticalClientId) {
     throw new Error(
-      `Não foi possível localizar o cliente "${customer.name}" no TRMM.`,
+      `Não foi possível localizar o cliente "${customer.name}" na base de monitoramento.`,
     );
   }
 
