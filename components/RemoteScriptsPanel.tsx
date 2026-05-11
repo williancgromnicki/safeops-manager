@@ -124,20 +124,6 @@ function StatusAlert({ status }: { status: StatusMessage }) {
   );
 }
 
-function formatDate(value?: string | null): string {
-  if (!value) {
-    return '—';
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleString('pt-BR');
-}
-
 function formatPlatforms(platforms?: string[]): string {
   if (!platforms?.length) {
     return 'All';
