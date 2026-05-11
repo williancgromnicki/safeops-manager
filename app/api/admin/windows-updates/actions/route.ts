@@ -47,6 +47,9 @@ type WindowsUpdateActionPayload = {
     | 'approve-update'
     | 'ignore-update'
     | 'reset-update';
+  deviceType?: 'server' | 'workstation';
+  confirmationUsed?: boolean;
+  hostnameConfirmed?: string;
 };
 
 function cleanString(value?: string | null): string | null {
@@ -57,6 +60,33 @@ function cleanString(value?: string | null): string | null {
 
 function normalizeRole(role?: string | null): string {
   return cleanString(role)?.toLowerCase() ?? '';
+}
+
+function normalize(value?: string | null): string {
+  return (value ?? '').trim().toLowerCase();
+}
+
+function inferDeviceType(input: {
+  payloadDeviceType?: 'server' | 'workstation';
+  agent: AgentRow;
+}): 'server' | 'workstation' {
+  if (
+    input.payloadDeviceType === 'server' ||
+    input.payloadDeviceType === 'workstation'
+  ) {
+    return input.payloadDeviceType;
+  }
+
+  const hostname = normalize(input.agent.hostname);
+
+  if (
+    hostname.startsWith('srv-') ||
+    hostname.includes('-srv-')
+  ) {
+    return 'server';
+  }
+
+  return 'workstation';
 }
 
 async function getAuthenticatedUser() {
@@ -451,6 +481,12 @@ export async function POST(request: NextRequest) {
           hostname: agent.hostname,
           site: agent.site_name ?? null,
           action: payload.action,
+          device_type: inferDeviceType({
+            payloadDeviceType: payload.deviceType,
+            agent,
+          }),
+          confirmation_used: payload.confirmationUsed === true,
+          hostname_confirmed: cleanString(payload.hostnameConfirmed),
         },
       });
 

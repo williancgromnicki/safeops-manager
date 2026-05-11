@@ -135,6 +135,51 @@ function actionLabel(action?: string | null): string {
   return 'Sem ação';
 }
 
+function getDeviceType(device: WindowsUpdateDevice): 'server' | 'workstation' {
+  const monitoringType = normalize(device.monitoring_type);
+  const operatingSystem = normalize(device.operating_system);
+  const hostname = normalize(device.hostname);
+
+  if (
+    monitoringType.includes('server') ||
+    operatingSystem.includes('server') ||
+    hostname.startsWith('srv-') ||
+    hostname.includes('-srv-')
+  ) {
+    return 'server';
+  }
+
+  return 'workstation';
+}
+
+function getDeviceTypeLabel(device: WindowsUpdateDevice): string {
+  return getDeviceType(device) === 'server' ? 'Servidor' : 'Estação';
+}
+
+function getDeviceTypeBadgeClass(device: WindowsUpdateDevice): string {
+  return getDeviceType(device) === 'server'
+    ? 'bg-indigo-50 text-indigo-700'
+    : 'bg-slate-100 text-slate-700';
+}
+
+function getInstallButtonLabel(device: WindowsUpdateDevice): string {
+  return getDeviceType(device) === 'server'
+    ? 'Instalar em servidor'
+    : 'Instalar aprovados';
+}
+
+function getInstallConfirmationMessage(device: WindowsUpdateDevice): string {
+  if (getDeviceType(device) === 'server') {
+    return [
+      `Você está prestes a instalar updates aprovados no servidor ${device.hostname}.`,
+      'Confirme que há janela de manutenção autorizada e que o impacto de reinicialização foi considerado.',
+      'Deseja continuar?',
+    ].join('\n\n');
+  }
+
+  return `Instalar os updates aprovados em ${device.hostname}?`;
+}
+
 function getUpdateBadgeClass(update: WindowsUpdate): string {
   if (normalize(update.severity) === 'critical') {
     return 'border-red-200 bg-red-50 text-red-700';
@@ -273,6 +318,9 @@ export function WindowsUpdatesPanel({ customerId }: WindowsUpdatesPanelProps) {
           agentId: input.agentId,
           updateId: input.updateId,
           action: input.action,
+          deviceType: selectedDevice ? getDeviceType(selectedDevice) : undefined,
+          confirmationUsed: Boolean(input.confirmMessage),
+          hostnameConfirmed: selectedDevice?.hostname ?? undefined,
         }),
       });
 
@@ -447,15 +495,25 @@ export function WindowsUpdatesPanel({ customerId }: WindowsUpdatesPanelProps) {
                       </p>
                     </div>
 
-                    <span
-                      className={`rounded-full px-2 py-1 text-xs font-semibold ${
-                        normalize(device.status) === 'online'
-                          ? 'bg-emerald-50 text-emerald-700'
-                          : 'bg-slate-100 text-slate-600'
-                      }`}
-                    >
-                      {device.status ?? 'sem status'}
-                    </span>
+                    <div className="flex shrink-0 flex-col items-end gap-2">
+                      <span
+                        className={`rounded-full px-2 py-1 text-xs font-semibold ${
+                          normalize(device.status) === 'online'
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : 'bg-slate-100 text-slate-600'
+                        }`}
+                      >
+                        {device.status ?? 'sem status'}
+                      </span>
+
+                      <span
+                        className={`rounded-full px-2 py-1 text-xs font-semibold ${getDeviceTypeBadgeClass(
+                          device,
+                        )}`}
+                      >
+                        {getDeviceTypeLabel(device)}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="mt-3 flex flex-wrap gap-2 text-xs">
@@ -524,11 +582,11 @@ export function WindowsUpdatesPanel({ customerId }: WindowsUpdatesPanelProps) {
                         action: 'install-approved',
                         agentId: selectedDevice.agent_id,
                         confirmMessage:
-                          'Instalar updates aprovados neste dispositivo? Em servidores, valide a janela de manutenção antes de prosseguir.',
+                          getInstallConfirmationMessage(selectedDevice),
                       })
                     }
                   >
-                    Instalar aprovados
+                    {getInstallButtonLabel(selectedDevice)}
                   </button>
                 </div>
               </div>
@@ -559,6 +617,18 @@ export function WindowsUpdatesPanel({ customerId }: WindowsUpdatesPanelProps) {
                   </p>
                 </div>
               </div>
+
+              {selectedDevice.updates_approved > 0 ? (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  Existem updates aprovados aguardando instalação neste dispositivo.
+                </div>
+              ) : null}
+
+              {selectedDevice.needs_reboot ? (
+                <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-800">
+                  Este dispositivo possui reinicialização pendente.
+                </div>
+              ) : null}
 
               <div className="space-y-3">
                 {selectedDevice.updates.length === 0 ? (
@@ -619,14 +689,14 @@ export function WindowsUpdatesPanel({ customerId }: WindowsUpdatesPanelProps) {
                                       action: 'install-approved',
                                       agentId: selectedDevice.agent_id,
                                       confirmMessage:
-                                        'Instalar os updates aprovados neste dispositivo? Em servidores, valide a janela de manutenção antes de prosseguir.',
+                                        getInstallConfirmationMessage(selectedDevice),
                                     })
                                   }
                                 >
                                   {runningAction ===
                                   `install-approved:${selectedDevice.agent_id}:agent`
                                     ? 'Instalando...'
-                                    : 'Instalar aprovados'}
+                                    : getInstallButtonLabel(selectedDevice)}
                                 </button>
 
                                 <button
