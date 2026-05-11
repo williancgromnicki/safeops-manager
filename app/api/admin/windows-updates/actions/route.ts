@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { createClient } from '@/lib/supabase/server';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
+import { executeTrmmScript } from '@/lib/trmm/scripts';
 import {
   fetchTrmmAgentsByClient,
   fetchTrmmWindowsUpdatesByAgent,
@@ -44,6 +45,7 @@ type WindowsUpdateActionPayload = {
   action?:
     | 'scan'
     | 'install-approved'
+    | 'precheck'
     | 'approve-update'
     | 'ignore-update'
     | 'reset-update';
@@ -88,6 +90,249 @@ function inferDeviceType(input: {
 
   return 'workstation';
 }
+
+
+const WINDOWS_UPDATE_PRECHECK_SCRIPT = String.raw`
+$ErrorActionPreference = "SilentlyContinue"
+
+function Get-ServiceInfo {
+    param([string]$Name)
+
+    $svc = Get-CimInstance Win32_Service -Filter "Name='$Name'" -ErrorAction SilentlyContinue
+
+    if ($null -eq $svc) {
+        return [ordered]@{
+            name = $Name
+            found = $false
+            state = "NotFound"
+            start_mode = $null
+            process_id = $null
+        }
+    }
+
+    return [ordered]@{
+        name = $Name
+        found = $true
+        state = $svc.State
+        start_mode = $svc.StartMode
+        process_id = $svc.ProcessId
+    }
+}
+
+$services = [ordered]@{
+    wuauserv = Get-ServiceInfo -Name "wuauserv"
+    bits = Get-ServiceInfo -Name "bits"
+    cryptsvc = Get-ServiceInfo -Name "cryptsvc"
+    trustedinstaller = Get-ServiceInfo -Name "TrustedInstaller"
+}
+
+$rebootChecks = [ordered]@{
+    component_based_servicing = Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending"
+    windows_update = Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired"
+    pending_file_rename = $false
+}
+
+try {
+    $sessionManager = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager" -ErrorAction SilentlyContinue
+    if ($sessionManager.PendingFileRenameOperations) {
+        $rebootChecks.pending_file_rename = $true
+    }
+} catch {}
+
+$policy = [ordered]@{
+    windows_update_policy_exists = Test-Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"
+    au_policy_exists = Test-Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU"
+    no_auto_update = $null
+    au_options = $null
+}
+
+try {
+    if ($policy.au_policy_exists) {
+        $au = Get-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -ErrorAction SilentlyContinue
+        $policy.no_auto_update = $au.NoAutoUpdate
+        $policy.au_options = $au.AUOptions
+    }
+} catch {}
+
+$blocking = New-Object System.Collections.Generic.List[string]
+$warnings = New-Object System.Collections.Generic.List[string]
+
+if ($services.wuauserv.state -eq "Stop Pending" -or $services.wuauserv.state -eq "StopPending") {
+    $blocking.Add("O servico Windows Update esta preso em parada pendente.")
+}
+
+if ($services.wuauserv.found -eq $false) {
+    $blocking.Add("O servico Windows Update nao foi encontrado.")
+}
+
+if ($services.cryptsvc.found -eq $false -or $services.cryptsvc.state -ne "Running") {
+    $warnings.Add("O servico de criptografia nao esta em execucao.")
+}
+
+if ($services.bits.found -eq $false) {
+    $warnings.Add("O servico BITS nao foi encontrado.")
+}
+
+if ($services.trustedinstaller.found -eq $false) {
+    $warnings.Add("O servico Instalador de Modulos do Windows nao foi encontrado.")
+}
+
+if ($rebootChecks.component_based_servicing -or $rebootChecks.windows_update -or $rebootChecks.pending_file_rename) {
+    $warnings.Add("Ha reinicializacao pendente no dispositivo.")
+}
+
+if ($policy.no_auto_update -eq 1) {
+    $warnings.Add("Politica local indica atualizacao automatica desabilitada.")
+}
+
+$status = "healthy"
+
+if ($blocking.Count -gt 0) {
+    $status = "blocked"
+} elseif ($warnings.Count -gt 0) {
+    $status = "warning"
+}
+
+$result = [ordered]@{
+    hostname = $env:COMPUTERNAME
+    checked_at = (Get-Date).ToString("o")
+    status = $status
+    services = $services
+    reboot_pending = $rebootChecks
+    policy = $policy
+    blocking = @($blocking)
+    warnings = @($warnings)
+}
+
+$result | ConvertTo-Json -Depth 8 -Compress
+`;
+
+type WindowsUpdatePrecheckResult = {
+  hostname?: string;
+  checked_at?: string;
+  status?: 'healthy' | 'warning' | 'blocked' | string;
+  services?: Record<string, unknown>;
+  reboot_pending?: Record<string, unknown>;
+  policy?: Record<string, unknown>;
+  blocking?: string[];
+  warnings?: string[];
+};
+
+function parsePrecheckOutput(stdout: string): WindowsUpdatePrecheckResult {
+  const trimmed = stdout.trim();
+
+  if (!trimmed) {
+    return {
+      status: 'blocked',
+      blocking: ['O pré-check não retornou dados.'],
+    };
+  }
+
+  const lines = trimmed
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index];
+
+    if (!line.startsWith('{') || !line.endsWith('}')) {
+      continue;
+    }
+
+    try {
+      return JSON.parse(line) as WindowsUpdatePrecheckResult;
+    } catch {
+      continue;
+    }
+  }
+
+  try {
+    return JSON.parse(trimmed) as WindowsUpdatePrecheckResult;
+  } catch {
+    return {
+      status: 'blocked',
+      blocking: ['Não foi possível interpretar o retorno do pré-check.'],
+    };
+  }
+}
+
+async function runWindowsUpdatePrecheck(agentId: string) {
+  const execution = await executeTrmmScript({
+    agentId,
+    code: WINDOWS_UPDATE_PRECHECK_SCRIPT,
+    timeout: 120,
+    shell: 'powershell',
+    runAsUser: false,
+  });
+
+  const parsed = parsePrecheckOutput(execution.stdout ?? '');
+
+  if (execution.retcode !== 0) {
+    return {
+      execution,
+      result: {
+        ...parsed,
+        status: 'blocked',
+        blocking: [
+          ...(parsed.blocking ?? []),
+          `O script de pré-check retornou código ${execution.retcode}.`,
+        ],
+      } satisfies WindowsUpdatePrecheckResult,
+    };
+  }
+
+  return {
+    execution,
+    result: parsed,
+  };
+}
+
+function precheckHasBlockingIssue(result: WindowsUpdatePrecheckResult): boolean {
+  return (
+    result.status === 'blocked' ||
+    Boolean(result.blocking && result.blocking.length > 0)
+  );
+}
+
+function summarizePrecheck(result: WindowsUpdatePrecheckResult): string {
+  if (precheckHasBlockingIssue(result)) {
+    return result.blocking?.join(' ') || 'Pré-check encontrou bloqueios.';
+  }
+
+  if (result.status === 'warning') {
+    return result.warnings?.join(' ') || 'Pré-check encontrou pontos de atenção.';
+  }
+
+  return 'Pré-check concluído sem bloqueios.';
+}
+
+function getPrecheckSuggestion(result: WindowsUpdatePrecheckResult): string {
+  const blockingText = (result.blocking ?? []).join(' ').toLowerCase();
+
+  if (
+    blockingText.includes('parada pendente') ||
+    blockingText.includes('stop pending') ||
+    blockingText.includes('stoppending')
+  ) {
+    return 'Procedimento sugerido: agende uma reinicialização do dispositivo e tente novamente após o retorno. O serviço de atualização está preso em estado intermediário.';
+  }
+
+  if (blockingText.includes('nao foi encontrado') || blockingText.includes('não foi encontrado')) {
+    return 'Procedimento sugerido: validar a integridade dos serviços do Windows Update no dispositivo antes de tentar novamente.';
+  }
+
+  if (result.status === 'warning') {
+    return 'Procedimento sugerido: revise os pontos de atenção registrados no job antes de executar a instalação em ambiente crítico.';
+  }
+
+  return 'Procedimento sugerido: validar a saúde do Windows Update no dispositivo e tentar novamente após a correção.';
+}
+
+function buildPrecheckBlockedMessage(result: WindowsUpdatePrecheckResult): string {
+  return `${summarizePrecheck(result)} ${getPrecheckSuggestion(result)}`;
+}
+
 
 async function getAuthenticatedUser() {
   const supabase = await createClient();
@@ -358,6 +603,15 @@ function getLabels(input: {
     };
   }
 
+  if (input.action === 'precheck') {
+    return {
+      jobType: 'windows_update_precheck',
+      commandKey: 'windows_update_precheck',
+      commandLabel: 'Pré-check de updates',
+      successMessage: 'Pré-check concluído. Consulte o resultado em Jobs remotos.',
+    };
+  }
+
   if (input.action === 'install-approved') {
     return {
       jobType: 'windows_update_install',
@@ -463,6 +717,95 @@ export async function POST(request: NextRequest) {
       hostname: agent.hostname,
     });
 
+    if (payload.action === 'precheck') {
+      const labels = getLabels({ action: payload.action });
+
+      const jobId = await createRemoteJob({
+        customerId,
+        deviceId: localDevice?.id ?? null,
+        requestedBy: user.id,
+        requestedByEmail: user.email ?? null,
+        requestedByRole: role,
+        jobType: labels.jobType,
+        status: 'running',
+        commandKey: labels.commandKey,
+        commandLabel: labels.commandLabel,
+        parameters: {
+          agent_id: agentId,
+          hostname: agent.hostname,
+          site: agent.site_name ?? null,
+          action: payload.action,
+          device_type: inferDeviceType({
+            payloadDeviceType: payload.deviceType,
+            agent,
+          }),
+          confirmation_used: false,
+          hostname_confirmed: null,
+        },
+      });
+
+      createdJobId = jobId;
+
+      await appendJobLog({
+        jobId,
+        level: 'info',
+        message: 'Pré-check de updates solicitado.',
+        payload: {
+          hostname: agent.hostname,
+          requested_by_email: user.email ?? null,
+        },
+      });
+
+      const precheck = await runWindowsUpdatePrecheck(agentId);
+      const hasBlockingIssue = precheckHasBlockingIssue(precheck.result);
+
+      await finishRemoteJob({
+        jobId,
+        status: hasBlockingIssue ? 'failed' : 'success',
+        result: {
+          message: hasBlockingIssue
+            ? buildPrecheckBlockedMessage(precheck.result)
+            : summarizePrecheck(precheck.result),
+          suggestion: hasBlockingIssue
+            ? getPrecheckSuggestion(precheck.result)
+            : null,
+          precheck: precheck.result,
+          execution: {
+            retcode: precheck.execution.retcode,
+            execution_time: precheck.execution.execution_time,
+            stderr: precheck.execution.stderr,
+          },
+        },
+        errorMessage: hasBlockingIssue
+          ? buildPrecheckBlockedMessage(precheck.result)
+          : null,
+      });
+
+      await appendJobLog({
+        jobId,
+        level: hasBlockingIssue ? 'error' : 'info',
+        message: hasBlockingIssue
+          ? 'Pré-check encontrou bloqueios.'
+          : 'Pré-check concluído.',
+        payload: {
+          precheck: precheck.result,
+        },
+      });
+
+      return NextResponse.json(
+        {
+          ok: !hasBlockingIssue,
+          jobId,
+          message: hasBlockingIssue
+            ? buildPrecheckBlockedMessage(precheck.result)
+            : summarizePrecheck(precheck.result),
+          agent,
+          precheck: precheck.result,
+        },
+        { status: hasBlockingIssue ? 409 : 200 },
+      );
+    }
+
     if (payload.action === 'scan' || payload.action === 'install-approved') {
       const labels = getLabels({ action: payload.action });
 
@@ -504,6 +847,47 @@ export async function POST(request: NextRequest) {
           requested_by_email: user.email ?? null,
         },
       });
+
+      if (payload.action === 'install-approved') {
+        const precheck = await runWindowsUpdatePrecheck(agentId);
+        const hasBlockingIssue = precheckHasBlockingIssue(precheck.result);
+
+        await appendJobLog({
+          jobId,
+          level: hasBlockingIssue ? 'error' : 'info',
+          message: hasBlockingIssue
+            ? 'Instalação bloqueada pelo pré-check.'
+            : 'Pré-check automático concluído antes da instalação.',
+          payload: {
+            precheck: precheck.result,
+          },
+        });
+
+        if (hasBlockingIssue) {
+          await finishRemoteJob({
+            jobId,
+            status: 'failed',
+            result: {
+              message: buildPrecheckBlockedMessage(precheck.result),
+              suggestion: getPrecheckSuggestion(precheck.result),
+              precheck: precheck.result,
+            },
+            errorMessage: buildPrecheckBlockedMessage(precheck.result),
+          });
+
+          return NextResponse.json(
+            {
+              ok: false,
+              jobId,
+              error: buildPrecheckBlockedMessage(precheck.result),
+              suggestion: getPrecheckSuggestion(precheck.result),
+              agent,
+              precheck: precheck.result,
+            },
+            { status: 409 },
+          );
+        }
+      }
 
       const result =
         payload.action === 'scan'
