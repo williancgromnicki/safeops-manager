@@ -113,6 +113,93 @@ function checkStatus(record: RawCheck) {
   return { status: 'unknown', severity: 'info' };
 }
 
+
+function getNumberField(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = record[key];
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) {
+      return Number(value);
+    }
+  }
+
+  return null;
+}
+
+function normalizeHistoryItem(item: unknown, index: number) {
+  if (typeof item !== 'object' || item === null) {
+    return null;
+  }
+
+  const record = item as Record<string, unknown>;
+
+  return {
+    id: getStr(record, ['id', 'pk', 'uuid']) ?? `history-${index}`,
+    checkedAt: getStr(record, ['checked_at', 'created_at', 'time', 'timestamp', 'date', 'datetime']),
+    value: getNumberField(record, ['value', 'percent', 'percentage', 'pct', 'usage', 'used_percent', 'free_percent']),
+    status: getStr(record, ['status', 'result', 'state']),
+    output: getStr(record, ['output', 'details', 'message', 'result_text', 'stdout']),
+  };
+}
+
+function extractHistory(raw: RawCheck) {
+  const keys = ['history', 'results', 'samples', 'data_points', 'data', 'records'];
+
+  for (const key of keys) {
+    const value = raw[key];
+
+    if (Array.isArray(value)) {
+      return value
+        .map(normalizeHistoryItem)
+        .filter((item): item is NonNullable<ReturnType<typeof normalizeHistoryItem>> => Boolean(item))
+        .slice(-50);
+    }
+  }
+
+  return [];
+}
+
+function extractParameters(raw: RawCheck) {
+  const keys = [
+    'threshold',
+    'warning_threshold',
+    'critical_threshold',
+    'warn_threshold',
+    'fail_threshold',
+    'timeout',
+    'interval',
+    'disk',
+    'drive',
+    'service',
+    'event_id',
+    'log_name',
+    'script',
+    'ip',
+    'host',
+  ];
+
+  return keys
+    .map((key) => {
+      const value = raw[key];
+
+      if (value === null || value === undefined || value === '') {
+        return null;
+      }
+
+      if (typeof value === 'object') {
+        return `${key}: ${JSON.stringify(value)}`;
+      }
+
+      return `${key}: ${String(value)}`;
+    })
+    .filter((item): item is string => Boolean(item));
+}
+
+
 function normalizeCheck(raw: RawCheck, index: number) {
   const type = checkType(
     getStr(raw, ['check_type', 'type', 'kind', 'monitor_type', 'category']),
@@ -137,6 +224,8 @@ function normalizeCheck(raw: RawCheck, index: number) {
     ]),
     lastRun: getStr(raw, ['last_run', 'last_check', 'checked_at', 'updated_at', 'modified']),
     enabled: getBool(raw, ['enabled', 'is_active', 'active']) ?? true,
+    parameters: extractParameters(raw),
+    history: extractHistory(raw),
   };
 }
 

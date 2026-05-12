@@ -2,6 +2,14 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
+type CheckHistoryItem = {
+  id: string;
+  checkedAt: string | null;
+  value: number | null;
+  status: string | null;
+  output: string | null;
+};
+
 type MonitoringCheck = {
   id: string;
   name: string;
@@ -12,6 +20,8 @@ type MonitoringCheck = {
   threshold: string | null;
   lastRun: string | null;
   enabled: boolean;
+  parameters?: string[];
+  history?: CheckHistoryItem[];
 };
 
 type MonitoringDevice = {
@@ -103,6 +113,197 @@ function checkLabel(status: MonitoringCheck['status']) {
   return 'Sem status';
 }
 
+function getHistoryValueLabel(item: CheckHistoryItem) {
+  if (typeof item.value === 'number') {
+    return `${item.value.toFixed(1)}%`;
+  }
+
+  return item.status ?? '—';
+}
+
+function getBarWidth(value: number | null) {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(100, value));
+}
+
+function CheckDetailsModal({
+  check,
+  onClose,
+}: {
+  check: MonitoringCheck;
+  onClose: () => void;
+}) {
+  const history = check.history ?? [];
+  const parameters = check.parameters ?? [];
+  const hasNumericHistory = history.some((item) => typeof item.value === 'number');
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
+      <div className="max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
+                {check.type}
+              </span>
+              <span className={`rounded-full px-2 py-1 text-xs font-semibold ${checkClass(check.status)}`}>
+                {checkLabel(check.status)}
+              </span>
+              {!check.enabled ? (
+                <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-500">
+                  Desabilitado
+                </span>
+              ) : null}
+            </div>
+
+            <h2 className="mt-3 text-xl font-bold text-brand-950">{check.name}</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Última execução: {formatDate(check.lastRun)}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+          >
+            Fechar
+          </button>
+        </div>
+
+        <div className="max-h-[calc(90vh-96px)] overflow-y-auto px-6 py-5">
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div className="rounded-xl bg-slate-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</p>
+              <p className="mt-2 text-lg font-bold text-brand-950">{checkLabel(check.status)}</p>
+            </div>
+
+            <div className="rounded-xl bg-slate-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tipo</p>
+              <p className="mt-2 text-lg font-bold text-brand-950">{check.type}</p>
+            </div>
+
+            <div className="rounded-xl bg-slate-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Parâmetro principal</p>
+              <p className="mt-2 text-lg font-bold text-brand-950">{check.threshold ?? '—'}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 rounded-xl border border-slate-200 p-4">
+            <h3 className="font-semibold text-brand-950">Resultado mais recente</h3>
+            {check.value ? (
+              <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-700">
+                {check.value}
+              </p>
+            ) : (
+              <p className="mt-3 text-sm text-slate-500">Nenhum resultado detalhado retornado.</p>
+            )}
+          </div>
+
+          <div className="mt-5 rounded-xl border border-slate-200 p-4">
+            <h3 className="font-semibold text-brand-950">Parâmetros configurados</h3>
+            {parameters.length > 0 ? (
+              <div className="mt-3 grid gap-2 md:grid-cols-2">
+                {parameters.map((parameter) => (
+                  <div
+                    key={parameter}
+                    className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700"
+                  >
+                    {parameter}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-slate-500">
+                A fonte ainda não retornou os parâmetros detalhados deste check.
+              </p>
+            )}
+          </div>
+
+          <div className="mt-5 rounded-xl border border-slate-200 p-4">
+            <div className="flex flex-col justify-between gap-2 lg:flex-row lg:items-center">
+              <div>
+                <h3 className="font-semibold text-brand-950">Histórico de execução</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Quando houver amostras numéricas, o SafeOps exibe uma visualização simples de tendência.
+                </p>
+              </div>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                {history.length} registros
+              </span>
+            </div>
+
+            {history.length === 0 ? (
+              <p className="mt-4 text-sm text-slate-500">
+                O histórico deste check ainda não foi retornado pela fonte. A estrutura já está pronta para exibir as execuções quando o endpoint de histórico for integrado.
+              </p>
+            ) : (
+              <div className="mt-4 space-y-3">
+                {hasNumericHistory ? (
+                  <div className="rounded-xl bg-slate-50 p-4">
+                    <div className="flex h-36 items-end gap-2">
+                      {history.slice(-20).map((item) => (
+                        <div key={item.id} className="flex h-full flex-1 flex-col justify-end">
+                          <div
+                            className="min-h-1 rounded-t bg-brand-600"
+                            style={{ height: `${getBarWidth(item.value)}%` }}
+                            title={`${formatDate(item.checkedAt)} · ${getHistoryValueLabel(item)}`}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">
+                      Últimas {Math.min(history.length, 20)} amostras
+                    </p>
+                  </div>
+                ) : null}
+
+                <div className="overflow-hidden rounded-xl border border-slate-200">
+                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-4 py-3">Data</th>
+                        <th className="px-4 py-3">Valor</th>
+                        <th className="px-4 py-3">Status</th>
+                        <th className="px-4 py-3">Resultado</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {history.slice().reverse().map((item) => (
+                        <tr key={item.id}>
+                          <td className="px-4 py-3 text-slate-600">{formatDate(item.checkedAt)}</td>
+                          <td className="px-4 py-3 font-semibold text-brand-950">{getHistoryValueLabel(item)}</td>
+                          <td className="px-4 py-3 text-slate-600">{item.status ?? '—'}</td>
+                          <td className="max-w-md px-4 py-3">
+                            <div className="max-h-24 overflow-auto whitespace-pre-wrap break-words text-slate-600">
+                              {item.output ?? '—'}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {selectedCheck ? (
+        <CheckDetailsModal
+          check={selectedCheck}
+          onClose={() => setSelectedCheck(null)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+
 export function MonitoringPanel({ customerId }: MonitoringPanelProps) {
   const [devices, setDevices] = useState<MonitoringDevice[]>([]);
   const [totals, setTotals] = useState<MonitoringTotals>();
@@ -112,6 +313,7 @@ export function MonitoringPanel({ customerId }: MonitoringPanelProps) {
   const [statusFilter, setStatusFilter] = useState('all');
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [selectedCheck, setSelectedCheck] = useState<MonitoringCheck | null>(null);
 
   const selectedDevice = useMemo(
     () => devices.find((device) => device.agentId === selectedAgentId) ?? null,
@@ -325,7 +527,12 @@ export function MonitoringPanel({ customerId }: MonitoringPanelProps) {
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">Nenhum detalhe de check foi encontrado para este dispositivo.</div>
                 ) : (
                   selectedDevice.checks.map((check) => (
-                    <div key={check.id} className="rounded-xl border border-slate-200 p-4">
+                    <button
+                      key={check.id}
+                      type="button"
+                      onClick={() => setSelectedCheck(check)}
+                      className="w-full rounded-xl border border-slate-200 p-4 text-left transition hover:border-brand-200 hover:bg-brand-50/40"
+                    >
                       <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-start">
                         <div>
                           <div className="flex flex-wrap items-center gap-2">
@@ -341,9 +548,13 @@ export function MonitoringPanel({ customerId }: MonitoringPanelProps) {
 
                         <div className="shrink-0 text-right text-xs text-slate-400">
                           Última execução<br />{formatDate(check.lastRun)}
+                          <br />
+                          <span className="mt-2 inline-flex rounded-full bg-white px-2 py-1 font-semibold text-brand-700 shadow-sm">
+                            Ver detalhes
+                          </span>
                         </div>
                       </div>
-                    </div>
+                    </button>
                   ))
                 )}
               </div>
@@ -353,6 +564,13 @@ export function MonitoringPanel({ customerId }: MonitoringPanelProps) {
           )}
         </div>
       </div>
+
+      {selectedCheck ? (
+        <CheckDetailsModal
+          check={selectedCheck}
+          onClose={() => setSelectedCheck(null)}
+        />
+      ) : null}
     </div>
   );
 }
