@@ -347,9 +347,9 @@ function parseValidationOutput(stdout: string): ValidationResult {
   const parsed = JSON.parse(jsonText) as ValidationResult;
 
   return {
-    installed: [],
-    missing: [],
     ...parsed,
+    installed: Array.isArray(parsed.installed) ? parsed.installed : [],
+    missing: Array.isArray(parsed.missing) ? parsed.missing : [],
   };
 }
 
