@@ -291,15 +291,7 @@ function CheckDetailsModal({
             )}
           </div>
         </div>
-      </div>
-
-      {selectedCheck ? (
-        <CheckDetailsModal
-          check={selectedCheck}
-          onClose={() => setSelectedCheck(null)}
-        />
-      ) : null}
-    </div>
+      </div>    </div>
   );
 }
 
