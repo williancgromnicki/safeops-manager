@@ -66,9 +66,6 @@ type WindowsUpdatesPanelProps = {
   customerId: string;
 };
 
-const cardClassName =
-  'rounded-2xl border border-surface-border bg-white p-5 shadow-sm';
-
 
 type InstallChecklistStatus = 'pending' | 'running' | 'success' | 'error' | 'skipped';
 
@@ -153,15 +150,15 @@ function getChecklistIcon(status: InstallChecklistStatus) {
   }
 
   if (status === 'error') {
-    return '✕';
+    return '!';
   }
 
   if (status === 'running') {
-    return '…';
+    return '...';
   }
 
   if (status === 'skipped') {
-    return '—';
+    return '-';
   }
 
   return '•';
@@ -179,10 +176,7 @@ function getPrecheckFailureStep(message: string) {
     return 'precheck-service';
   }
 
-  if (
-    normalized.includes('reboot') ||
-    normalized.includes('reinicial')
-  ) {
+  if (normalized.includes('reboot') || normalized.includes('reinicial')) {
     return 'precheck-reboot';
   }
 
@@ -199,6 +193,9 @@ function getPrecheckFailureStep(message: string) {
   return 'prepare';
 }
 
+
+const cardClassName =
+  'rounded-2xl border border-surface-border bg-white p-5 shadow-sm';
 
 const buttonClassName =
   'inline-flex items-center justify-center rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-60';
@@ -330,21 +327,22 @@ export function WindowsUpdatesPanel({ customerId }: WindowsUpdatesPanelProps) {
   const [search, setSearch] = useState('');
   const [isLoadingUpdates, setIsLoadingUpdates] = useState(false);
   const [runningAction, setRunningAction] = useState<string | null>(null);
+  const [status, setStatus] = useState<StatusMessage>(null);
   const [showInstallModal, setShowInstallModal] = useState(false);
-  const [installChecklist, setInstallChecklist] = useState<InstallChecklistItem[]>(INSTALL_CHECKLIST_TEMPLATE);
+  const [installChecklist, setInstallChecklist] = useState<InstallChecklistItem[]>(
+    INSTALL_CHECKLIST_TEMPLATE,
+  );
   const [installModalTitle, setInstallModalTitle] = useState('');
   const [installModalMessage, setInstallModalMessage] = useState('');
   const [installModalFinished, setInstallModalFinished] = useState(false);
-  const [status, setStatus] = useState<StatusMessage>(null);
 
   const selectedDevice = useMemo(
     () => devices.find((device) => device.agent_id === selectedAgentId) ?? null,
     [devices, selectedAgentId],
   );
 
-
   useEffect(() => {
-    if (!showInstallModal || !runningAction || runningAction !== 'install-approved') {
+    if (!showInstallModal || !runningAction?.startsWith('install-approved:')) {
       return;
     }
 
@@ -365,9 +363,10 @@ export function WindowsUpdatesPanel({ customerId }: WindowsUpdatesPanelProps) {
           status: 'running',
           detail: 'Conferindo o serviço Windows Update.',
         });
+
         return next;
       });
-    }, 600);
+    }, 500);
 
     const timer2 = window.setTimeout(() => {
       setInstallChecklist((current) => {
@@ -379,9 +378,10 @@ export function WindowsUpdatesPanel({ customerId }: WindowsUpdatesPanelProps) {
           status: 'running',
           detail: 'Conferindo serviços auxiliares e políticas.',
         });
+
         return next;
       });
-    }, 1400);
+    }, 1300);
 
     const timer3 = window.setTimeout(() => {
       setInstallChecklist((current) => {
@@ -393,9 +393,10 @@ export function WindowsUpdatesPanel({ customerId }: WindowsUpdatesPanelProps) {
           status: 'running',
           detail: 'Validando se há reinicialização pendente.',
         });
+
         return next;
       });
-    }, 2200);
+    }, 2100);
 
     return () => {
       window.clearTimeout(timer1);
@@ -499,6 +500,22 @@ export function WindowsUpdatesPanel({ customerId }: WindowsUpdatesPanelProps) {
       return;
     }
 
+    const isInstallAction = input.action === 'install-approved';
+
+    if (isInstallAction && selectedDevice) {
+      setInstallModalTitle(
+        getDeviceType(selectedDevice) === 'server'
+          ? 'Pré-check para instalação em servidor'
+          : 'Pré-check para instalação de updates',
+      );
+      setInstallModalMessage(
+        'Executando validações antes de solicitar a instalação.',
+      );
+      setInstallModalFinished(false);
+      setInstallChecklist(INSTALL_CHECKLIST_TEMPLATE);
+      setShowInstallModal(true);
+    }
+
     try {
       setRunningAction(
         `${input.action}:${input.agentId}:${input.updateId ?? 'agent'}`,
@@ -526,7 +543,73 @@ export function WindowsUpdatesPanel({ customerId }: WindowsUpdatesPanelProps) {
         ok: boolean;
         error?: string;
         message?: string;
+        suggestion?: string;
       };
+
+      if (isInstallAction) {
+        if (!response.ok || !data.ok) {
+          const failedStep = getPrecheckFailureStep(
+            data.error ?? 'Falha no pré-check.',
+          );
+
+          setInstallChecklist((current) => {
+            let next = updateChecklistStep(current, failedStep, {
+              status: 'error',
+              detail: data.error ?? 'Falha no pré-check.',
+            });
+
+            next = updateChecklistStep(next, 'install-request', {
+              status: 'skipped',
+              detail:
+                'Instalação não solicitada devido ao bloqueio identificado.',
+            });
+
+            next = updateChecklistStep(next, 'result', {
+              status: 'error',
+              detail:
+                data.suggestion ??
+                data.error ??
+                'A instalação foi bloqueada pelo pré-check.',
+            });
+
+            return next;
+          });
+
+          setInstallModalMessage(
+            data.suggestion ??
+              data.error ??
+              'A instalação foi bloqueada pelo pré-check.',
+          );
+          setInstallModalFinished(true);
+        } else {
+          setInstallChecklist((current) => {
+            let next = updateChecklistStep(current, 'precheck-reboot', {
+              status: 'success',
+              detail: 'Pré-check concluído sem bloqueios impeditivos.',
+            });
+
+            next = updateChecklistStep(next, 'install-request', {
+              status: 'success',
+              detail: 'Solicitação enviada com sucesso.',
+            });
+
+            next = updateChecklistStep(next, 'result', {
+              status: 'success',
+              detail:
+                data.message ??
+                'Instalação solicitada. Acompanhe a execução em Jobs remotos.',
+            });
+
+            return next;
+          });
+
+          setInstallModalMessage(
+            data.message ??
+              'Instalação solicitada. Acompanhe a execução em Jobs remotos.',
+          );
+          setInstallModalFinished(true);
+        }
+      }
 
       if (!response.ok || !data.ok) {
         throw new Error(data.error ?? 'Erro ao executar ação.');
@@ -964,6 +1047,77 @@ export function WindowsUpdatesPanel({ customerId }: WindowsUpdatesPanelProps) {
           )}
         </div>
       </div>
+      {showInstallModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-surface-border bg-white shadow-xl">
+            <div className="border-b border-slate-200 px-6 py-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">
+                    {installModalTitle || 'Pré-check da instalação'}
+                  </h3>
+                  <p className="mt-1 text-sm text-slate-600">
+                    {installModalMessage ||
+                      'Executando validações antes da instalação.'}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={() => setShowInstallModal(false)}
+                  disabled={!installModalFinished}
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-3 px-6 py-5">
+              {installChecklist.map((item) => (
+                <div
+                  key={item.key}
+                  className={`rounded-xl border px-4 py-3 ${getChecklistStatusClasses(
+                    item.status,
+                  )}`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-current text-xs font-bold">
+                      {getChecklistIcon(item.status)}
+                    </div>
+
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold">{item.label}</p>
+                      <p className="mt-1 text-sm opacity-90">
+                        {item.detail ?? 'Aguardando execução.'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-between gap-4 border-t border-slate-200 px-6 py-4">
+              <p className="text-xs text-slate-500">
+                {installModalFinished
+                  ? 'Processo concluído. Você pode fechar esta janela.'
+                  : 'Aguarde enquanto o SafeOps executa as validações e solicita a instalação.'}
+              </p>
+
+              {installModalFinished ? (
+                <button
+                  type="button"
+                  className="rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-800"
+                  onClick={() => setShowInstallModal(false)}
+                >
+                  Concluir
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
     </div>
   );
 }
