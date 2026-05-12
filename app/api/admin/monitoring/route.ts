@@ -140,6 +140,68 @@ function normalizeCheck(raw: RawCheck, index: number) {
   };
 }
 
+function readListFromResponse(response: unknown): RawCheck[] {
+  if (Array.isArray(response)) {
+    return response as RawCheck[];
+  }
+
+  if (typeof response !== 'object' || response === null) {
+    return [];
+  }
+
+  const record = response as Record<string, unknown>;
+
+  for (const key of ['checks', 'results', 'data']) {
+    if (Array.isArray(record[key])) {
+      return record[key] as RawCheck[];
+    }
+  }
+
+  return [];
+}
+
+function checkHasAgentScope(check: RawCheck) {
+  const directAgent = getStr(check, [
+    'agent_id',
+    'agentid',
+    'agentId',
+    'agent',
+    'device_agent_id',
+    'assigned_agent_id',
+  ]);
+
+  if (directAgent) {
+    return directAgent;
+  }
+
+  const nestedAgent = check.agent;
+
+  if (typeof nestedAgent === 'object' && nestedAgent !== null) {
+    return getStr(nestedAgent as Record<string, unknown>, [
+      'agent_id',
+      'agentid',
+      'agentId',
+      'id',
+    ]);
+  }
+
+  return null;
+}
+
+function filterChecksForAgent(checks: RawCheck[], agentId: string) {
+  const normalizedAgentId = norm(agentId);
+
+  return checks.filter((check) => {
+    const checkAgentId = checkHasAgentScope(check);
+
+    if (!checkAgentId) {
+      return false;
+    }
+
+    return norm(checkAgentId) === normalizedAgentId;
+  });
+}
+
 async function userFromSession() {
   const supabase = await createClient();
   const {
@@ -205,24 +267,33 @@ async function resolveClientId(row: CustomerRow) {
 }
 
 async function fetchChecks(agentId: string): Promise<RawCheck[]> {
-  const paths = [
-    `/checks/${encodeURIComponent(agentId)}/`,
+  try {
+    const response = await fetchTrmmApi<unknown>(
+      `/agents/${encodeURIComponent(agentId)}/checks/`,
+      { method: 'GET' },
+    );
+    const checks = readListFromResponse(response);
+
+    if (checks.length > 0) {
+      return checks;
+    }
+  } catch {
+    // O endpoint dedicado pode não existir em algumas versões.
+  }
+
+  const scopedPaths = [
     `/checks/?agent=${encodeURIComponent(agentId)}`,
-    `/agents/${encodeURIComponent(agentId)}/checks/`,
+    `/checks/${encodeURIComponent(agentId)}/`,
   ];
 
-  for (const path of paths) {
+  for (const path of scopedPaths) {
     try {
       const response = await fetchTrmmApi<unknown>(path, { method: 'GET' });
+      const checks = readListFromResponse(response);
+      const scopedChecks = filterChecksForAgent(checks, agentId);
 
-      if (Array.isArray(response)) return response as RawCheck[];
-
-      if (
-        typeof response === 'object' &&
-        response !== null &&
-        Array.isArray((response as Record<string, unknown>).checks)
-      ) {
-        return (response as { checks: RawCheck[] }).checks;
+      if (scopedChecks.length > 0) {
+        return scopedChecks;
       }
     } catch {
       // tenta próximo formato
