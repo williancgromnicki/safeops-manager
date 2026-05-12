@@ -233,16 +233,32 @@ function formatResult(value: Record<string, unknown> | null): string {
   const message = typeof value.message === 'string' ? value.message : null;
   const reboot =
     typeof value.reboot_pending === 'boolean' ? value.reboot_pending : null;
+  const retcode = typeof value.retcode === 'number' ? value.retcode : null;
+  const executionTime =
+    typeof value.execution_time === 'number' ? value.execution_time : null;
+  const stdout = typeof value.stdout === 'string' ? value.stdout : null;
+  const stderr = typeof value.stderr === 'string' ? value.stderr : null;
 
   if (message && reboot !== null) {
-    return `${message} Reboot pendente: ${reboot ? 'Sim' : 'Não'}.`;
+    return `${message}\nReboot pendente: ${reboot ? 'Sim' : 'Não'}.`;
   }
 
   if (message) {
     return message;
   }
 
-  return JSON.stringify(value);
+  if (retcode !== null) {
+    const lines = [
+      `Retcode: ${retcode}`,
+      executionTime !== null ? `Tempo: ${executionTime}s` : null,
+      stdout ? `Saída: ${stdout.slice(0, 500)}${stdout.length > 500 ? '...' : ''}` : null,
+      stderr ? `Erro: ${stderr.slice(0, 300)}${stderr.length > 300 ? '...' : ''}` : null,
+    ].filter(Boolean);
+
+    return lines.join('\n');
+  }
+
+  return JSON.stringify(value, null, 2);
 }
 
 
@@ -381,12 +397,16 @@ export default async function RemoteJobsPage({
                   {job.command_label ?? job.command_key ?? '—'}
                 </td>
 
-                <td className="max-w-xs px-4 py-3 text-sm">
-                  {formatParameters(job.parameters)}
+                <td className="max-w-xs break-words px-4 py-3 text-sm">
+                  <div className="max-w-xs whitespace-pre-wrap break-words">
+                    {formatParameters(job.parameters)}
+                  </div>
                 </td>
 
-                <td className="max-w-sm px-4 py-3 text-sm">
-                  {formatResult(job.result)}
+                <td className="max-w-md px-4 py-3 text-sm">
+                  <div className="max-h-48 max-w-md overflow-auto whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-2 text-xs leading-relaxed text-slate-700">
+                    {formatResult(job.result)}
+                  </div>
                 </td>
 
                 <td className="px-4 py-3 text-sm">
@@ -401,7 +421,9 @@ export default async function RemoteJobsPage({
                 </td>
 
                 <td className="max-w-sm px-4 py-3 text-sm text-rose-700">
-                  {job.error_message ?? '—'}
+                  <div className="max-w-sm whitespace-pre-wrap break-words">
+                    {job.error_message ?? '—'}
+                  </div>
                 </td>
               </tr>
             ))}
