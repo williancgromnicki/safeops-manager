@@ -65,6 +65,42 @@ function normalizeRole(role?: string | null): string {
   return cleanString(role)?.toLowerCase() ?? '';
 }
 
+function isUuidLike(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    value.trim(),
+  );
+}
+
+function resolveScriptSource(payload: ExecutePayload): 'library' | 'local' {
+  const scriptId = String(payload.scriptId ?? '').trim();
+
+  if (payload.scriptSource === 'local') {
+    return 'local';
+  }
+
+  if (payload.scriptSource === 'library' && isUuidLike(scriptId)) {
+    return 'local';
+  }
+
+  if (isUuidLike(scriptId)) {
+    return 'local';
+  }
+
+  return 'library';
+}
+
+function parseLibraryScriptId(scriptId: number | string): number {
+  const parsed = Number(scriptId);
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(
+      'Script inválido: selecione novamente o script na biblioteca e tente executar de novo.',
+    );
+  }
+
+  return parsed;
+}
+
 async function getAuthenticatedUser() {
   const supabase = await createClient();
 
@@ -169,19 +205,17 @@ async function prepareLocalScript(input: {
 
   const script = data as LocalScriptRow;
 
+  const isSafesysScope = script.scope === 'safesys';
   const isSameCustomer = script.customer_id === input.customerId;
-  const ownsScript = script.created_by_user_id === input.userId;
 
-  if (!input.isAdmin && !isSameCustomer) {
+  if (!input.isAdmin && !isSafesysScope && !isSameCustomer) {
     throw new Error('Este script local não pertence ao cliente selecionado.');
   }
 
-  if (!input.isAdmin && !ownsScript) {
-    throw new Error('Você pode visualizar este script local, mas apenas o autor pode executá-lo.');
-  }
-
   if (script.status !== 'approved' && !input.isAdmin) {
-    throw new Error('Este script ainda está pendente de revisão e não pode ser executado.');
+    throw new Error(
+      'Este script ainda está pendente de revisão e não pode ser executado.',
+    );
   }
 
   return {
@@ -294,7 +328,7 @@ export async function POST(request: NextRequest) {
 
     const customerId = cleanString(payload.customerId);
     const deviceId = cleanString(payload.deviceId);
-    const scriptSource = payload.scriptSource === 'local' ? 'local' : 'library';
+    const scriptSource = resolveScriptSource(payload);
     const timeout = Number(payload.timeout ?? 90);
     const runAsUser = payload.runAsUser === true;
 
@@ -369,7 +403,7 @@ export async function POST(request: NextRequest) {
             isAdmin,
           })
         : await prepareLibraryScript({
-            scriptId: Number(payload.scriptId),
+            scriptId: parseLibraryScriptId(payload.scriptId),
             scriptName: cleanString(payload.scriptName),
             shell: cleanString(payload.shell),
           });
@@ -382,7 +416,7 @@ export async function POST(request: NextRequest) {
 
     if (!trmmAgent) {
       throw new Error(
-        `Não foi possível localizar o agent_id real do TRMM para o dispositivo ${device.hostname}. Sincronize o inventário ou valide o hostname no TRMM.`,
+        `Não foi possível localizar o agente real para o dispositivo ${device.hostname}. Sincronize o inventário ou valide o hostname.`,
       );
     }
 
@@ -403,7 +437,7 @@ export async function POST(request: NextRequest) {
         run_as_user: runAsUser,
         hostname: device.hostname,
         site: device.site,
-        trmm_agent_id: trmmAgent.agent_id,
+        agent_id: trmmAgent.agent_id,
       },
     });
 
@@ -427,8 +461,8 @@ export async function POST(request: NextRequest) {
         stderr: result.stderr,
         retcode: result.retcode,
         execution_time: result.execution_time,
-        trmm_result_id: result.id,
-        trmm_agent_id: trmmAgent.agent_id,
+        execution_result_id: result.id,
+        agent_id: trmmAgent.agent_id,
       },
       errorMessage:
         status === 'failed'
