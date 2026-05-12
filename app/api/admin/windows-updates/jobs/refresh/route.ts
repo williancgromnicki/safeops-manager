@@ -263,26 +263,33 @@ function extractUpdatesFromParameters(
     return [];
   }
 
-  return rawUpdates
-    .map((item) => {
-      if (typeof item !== 'object' || item === null) {
-        return null;
-      }
+  const updates: UpdateToValidate[] = [];
 
-      const record = item as Record<string, unknown>;
+  for (const item of rawUpdates) {
+    if (typeof item !== 'object' || item === null) {
+      continue;
+    }
 
-      return {
-        update_id:
-          typeof record.update_id === 'number'
-            ? record.update_id
-            : typeof record.id === 'number'
-              ? record.id
-              : null,
-        kb: typeof record.kb === 'string' ? record.kb : null,
-        title: typeof record.title === 'string' ? record.title : null,
-      };
-    })
-    .filter((item): item is UpdateToValidate => Boolean(item?.kb));
+    const record = item as Record<string, unknown>;
+    const kb = typeof record.kb === 'string' ? record.kb.trim() : '';
+
+    if (!kb) {
+      continue;
+    }
+
+    updates.push({
+      update_id:
+        typeof record.update_id === 'number'
+          ? record.update_id
+          : typeof record.id === 'number'
+            ? record.id
+            : null,
+      kb,
+      title: typeof record.title === 'string' ? record.title : null,
+    });
+  }
+
+  return updates;
 }
 
 function getKbFromTitle(title?: string | null): string | null {
