@@ -63,6 +63,12 @@ const OPERATIONS_NAV_ITEMS: NavItem[] = [
     roles: ['admin', 'client'],
   },
   {
+  href: '/admin/monitoring',
+  label: 'Monitoramento',
+  preserveCustomer: true,
+  roles: ['admin', 'client'],
+  },
+  {
     href: '/operations/actions',
     label: 'Ações administrativas',
     preserveCustomer: true,
