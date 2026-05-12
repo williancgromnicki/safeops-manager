@@ -60,6 +60,15 @@ type MonitoringResponse = {
   devices?: MonitoringDevice[];
 };
 
+type CheckHistoryResponse = {
+  ok: boolean;
+  error?: string;
+  message?: string;
+  sourcePath?: string;
+  history?: CheckHistoryItem[];
+  attempted?: string[];
+};
+
 type MonitoringPanelProps = {
   customerId: string;
 };
@@ -131,13 +140,64 @@ function getBarWidth(value: number | null) {
 
 function CheckDetailsModal({
   check,
+  customerId,
+  agentId,
   onClose,
 }: {
   check: MonitoringCheck;
+  customerId: string;
+  agentId: string;
   onClose: () => void;
 }) {
-  const history = check.history ?? [];
+  const [range, setRange] = useState('24h');
+  const [remoteHistory, setRemoteHistory] = useState<CheckHistoryItem[]>(check.history ?? []);
+  const [historyMessage, setHistoryMessage] = useState<string | null>(null);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const parameters = check.parameters ?? [];
+
+  async function loadHistory(nextRange = range) {
+    try {
+      setIsLoadingHistory(true);
+      setHistoryMessage(null);
+
+      const response = await fetch(
+        `/api/admin/monitoring/check-history?customerId=${encodeURIComponent(
+          customerId,
+        )}&agentId=${encodeURIComponent(agentId)}&checkId=${encodeURIComponent(
+          check.id,
+        )}&range=${encodeURIComponent(nextRange)}`,
+        {
+          method: 'GET',
+          cache: 'no-store',
+        },
+      );
+
+      const data = (await response.json()) as CheckHistoryResponse;
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? 'Erro ao carregar histórico do check.');
+      }
+
+      setRemoteHistory(data.history ?? []);
+      setHistoryMessage(data.message ?? null);
+    } catch (error) {
+      setRemoteHistory([]);
+      setHistoryMessage(
+        error instanceof Error
+          ? error.message
+          : 'Erro ao carregar histórico do check.',
+      );
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadHistory('24h');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [check.id, agentId, customerId]);
+
+  const history = remoteHistory;
   const hasNumericHistory = history.some((item) => typeof item.value === 'number');
 
   return (
@@ -165,13 +225,38 @@ function CheckDetailsModal({
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
-          >
-            Fechar
-          </button>
+          <div className="flex items-center gap-3">
+            <select
+              value={range}
+              onChange={(event) => {
+                const nextRange = event.target.value;
+                setRange(nextRange);
+                void loadHistory(nextRange);
+              }}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+            >
+              <option value="24h">Últimas 24 horas</option>
+              <option value="7d">Últimos 7 dias</option>
+              <option value="30d">Últimos 30 dias</option>
+              <option value="all">Tudo</option>
+            </select>
+
+            <button
+              type="button"
+              onClick={() => void loadHistory(range)}
+              className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+            >
+              Atualizar histórico
+            </button>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+            >
+              Fechar
+            </button>
+          </div>
         </div>
 
         <div className="max-h-[calc(90vh-96px)] overflow-y-auto px-6 py-5">
@@ -236,10 +321,15 @@ function CheckDetailsModal({
               </span>
             </div>
 
-            {history.length === 0 ? (
+            {isLoadingHistory ? (
               <p className="mt-4 text-sm text-slate-500">
-                O histórico deste check ainda não foi retornado pela fonte. A estrutura já está pronta para exibir as execuções quando o endpoint de histórico for integrado.
+                Carregando histórico do check...
               </p>
+            ) : history.length === 0 ? (
+              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                {historyMessage ??
+                  'O histórico deste check ainda não foi retornado pela fonte.'}
+              </div>
             ) : (
               <div className="mt-4 space-y-3">
                 {hasNumericHistory ? (
@@ -560,6 +650,8 @@ export function MonitoringPanel({ customerId }: MonitoringPanelProps) {
       {selectedCheck ? (
         <CheckDetailsModal
           check={selectedCheck}
+          customerId={customerId}
+          agentId={selectedDevice?.agentId ?? ''}
           onClose={() => setSelectedCheck(null)}
         />
       ) : null}
