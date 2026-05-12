@@ -131,6 +131,10 @@ function translateJobType(value: string): string {
     return 'Instalação de updates';
   }
 
+  if (normalized === 'windows_update_precheck') {
+    return 'Pré-check de updates';
+  }
+
   return value;
 }
 
@@ -188,7 +192,6 @@ function formatParameters(value: Record<string, unknown> | null): string {
     return '—';
   }
 
-  const hostname = typeof value.hostname === 'string' ? value.hostname : null;
   const packageId =
     typeof value.package_id === 'string' ? value.package_id : null;
   const action = typeof value.action === 'string' ? value.action : null;
@@ -219,10 +222,6 @@ function formatParameters(value: Record<string, unknown> | null): string {
     return actionLabels[action] ?? `Ação: ${action}`;
   }
 
-  if (hostname) {
-    return `Host: ${hostname}`;
-  }
-
   return JSON.stringify(value);
 }
 
@@ -232,8 +231,8 @@ function formatResult(value: Record<string, unknown> | null): string {
   }
 
   const message = typeof value.message === 'string' ? value.message : null;
-  const status = typeof value.status === 'string' ? value.status : null;
-  const reboot = typeof value.needs_reboot === 'boolean' ? value.needs_reboot : null;
+  const reboot =
+    typeof value.reboot_pending === 'boolean' ? value.reboot_pending : null;
 
   if (message && reboot !== null) {
     return `${message} Reboot pendente: ${reboot ? 'Sim' : 'Não'}.`;
@@ -243,12 +242,9 @@ function formatResult(value: Record<string, unknown> | null): string {
     return message;
   }
 
-  if (status) {
-    return status;
-  }
-
   return JSON.stringify(value);
 }
+
 
 export default async function RemoteJobsPage({
   searchParams,
@@ -332,7 +328,7 @@ export default async function RemoteJobsPage({
               <p className="mt-1 text-2xl font-bold">{jobs.length}</p>
             </div>
 
-            <RemoteJobsRefreshButton />
+            <RemoteJobsRefreshButton customerId={activeCustomer.customerId} />
           </div>
         </div>
       </div>
