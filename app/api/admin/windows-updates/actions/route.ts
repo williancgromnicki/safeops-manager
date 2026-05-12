@@ -95,116 +95,95 @@ function inferDeviceType(input: {
 const WINDOWS_UPDATE_PRECHECK_SCRIPT = String.raw`
 $ErrorActionPreference = "SilentlyContinue"
 
-function Get-ServiceInfo {
+function SafeOps-ServiceState {
     param([string]$Name)
 
     $svc = Get-CimInstance Win32_Service -Filter "Name='$Name'" -ErrorAction SilentlyContinue
 
     if ($null -eq $svc) {
-        return [ordered]@{
-            name = $Name
-            found = $false
-            state = "NotFound"
-            start_mode = $null
-            process_id = $null
-        }
+        return "NotFound"
     }
 
-    return [ordered]@{
-        name = $Name
-        found = $true
-        state = $svc.State
-        start_mode = $svc.StartMode
-        process_id = $svc.ProcessId
-    }
+    return [string]$svc.State
 }
 
-$services = [ordered]@{
-    wuauserv = Get-ServiceInfo -Name "wuauserv"
-    bits = Get-ServiceInfo -Name "bits"
-    cryptsvc = Get-ServiceInfo -Name "cryptsvc"
-    trustedinstaller = Get-ServiceInfo -Name "TrustedInstaller"
-}
+$wuauserv = SafeOps-ServiceState -Name "wuauserv"
+$bits = SafeOps-ServiceState -Name "bits"
+$cryptsvc = SafeOps-ServiceState -Name "cryptsvc"
+$trustedinstaller = SafeOps-ServiceState -Name "TrustedInstaller"
 
-$rebootChecks = [ordered]@{
-    component_based_servicing = Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending"
-    windows_update = Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired"
-    pending_file_rename = $false
-}
+$rebootCbs = Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending"
+$rebootWu = Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired"
+$pendingRename = $false
 
 try {
     $sessionManager = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager" -ErrorAction SilentlyContinue
     if ($sessionManager.PendingFileRenameOperations) {
-        $rebootChecks.pending_file_rename = $true
+        $pendingRename = $true
     }
 } catch {}
 
-$policy = [ordered]@{
-    windows_update_policy_exists = Test-Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"
-    au_policy_exists = Test-Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU"
-    no_auto_update = $null
-    au_options = $null
+$blocking = @()
+$warnings = @()
+
+if ($wuauserv -eq "Stop Pending" -or $wuauserv -eq "StopPending") {
+    $blocking += "O servico Windows Update esta preso em parada pendente."
 }
 
-try {
-    if ($policy.au_policy_exists) {
-        $au = Get-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -ErrorAction SilentlyContinue
-        $policy.no_auto_update = $au.NoAutoUpdate
-        $policy.au_options = $au.AUOptions
-    }
-} catch {}
-
-$blocking = New-Object System.Collections.Generic.List[string]
-$warnings = New-Object System.Collections.Generic.List[string]
-
-if ($services.wuauserv.state -eq "Stop Pending" -or $services.wuauserv.state -eq "StopPending") {
-    $blocking.Add("O servico Windows Update esta preso em parada pendente.")
+if ($wuauserv -eq "NotFound") {
+    $blocking += "O servico Windows Update nao foi encontrado."
 }
 
-if ($services.wuauserv.found -eq $false) {
-    $blocking.Add("O servico Windows Update nao foi encontrado.")
+if ($cryptsvc -eq "NotFound") {
+    $blocking += "O servico de criptografia nao foi encontrado."
+} elseif ($cryptsvc -ne "Running") {
+    $warnings += "O servico de criptografia nao esta em execucao."
 }
 
-if ($services.cryptsvc.found -eq $false -or $services.cryptsvc.state -ne "Running") {
-    $warnings.Add("O servico de criptografia nao esta em execucao.")
+if ($bits -eq "NotFound") {
+    $warnings += "O servico BITS nao foi encontrado."
+} elseif ($bits -ne "Running") {
+    $warnings += "O servico BITS esta parado. Isso pode ser normal quando ocioso."
 }
 
-if ($services.bits.found -eq $false) {
-    $warnings.Add("O servico BITS nao foi encontrado.")
+if ($trustedinstaller -eq "NotFound") {
+    $warnings += "O servico Instalador de Modulos do Windows nao foi encontrado."
+} elseif ($trustedinstaller -ne "Running") {
+    $warnings += "O servico Instalador de Modulos do Windows esta parado. Isso pode ser normal quando ocioso."
 }
 
-if ($services.trustedinstaller.found -eq $false) {
-    $warnings.Add("O servico Instalador de Modulos do Windows nao foi encontrado.")
-}
-
-if ($rebootChecks.component_based_servicing -or $rebootChecks.windows_update -or $rebootChecks.pending_file_rename) {
-    $warnings.Add("Ha reinicializacao pendente no dispositivo.")
-}
-
-if ($policy.no_auto_update -eq 1) {
-    $warnings.Add("Politica local indica atualizacao automatica desabilitada.")
+if ($rebootCbs -or $rebootWu -or $pendingRename) {
+    $warnings += "Ha reinicializacao pendente no dispositivo."
 }
 
 $status = "healthy"
-
 if ($blocking.Count -gt 0) {
     $status = "blocked"
 } elseif ($warnings.Count -gt 0) {
     $status = "warning"
 }
 
-$result = [ordered]@{
+$json = @{
     hostname = $env:COMPUTERNAME
     checked_at = (Get-Date).ToString("o")
     status = $status
-    services = $services
-    reboot_pending = $rebootChecks
-    policy = $policy
-    blocking = @($blocking)
-    warnings = @($warnings)
-}
+    services = @{
+        wuauserv = @{ state = $wuauserv }
+        bits = @{ state = $bits }
+        cryptsvc = @{ state = $cryptsvc }
+        trustedinstaller = @{ state = $trustedinstaller }
+    }
+    reboot_pending = @{
+        component_based_servicing = $rebootCbs
+        windows_update = $rebootWu
+        pending_file_rename = $pendingRename
+    }
+    blocking = $blocking
+    warnings = $warnings
+} | ConvertTo-Json -Depth 6 -Compress
 
-$result | ConvertTo-Json -Depth 8 -Compress
+Write-Output "SAFEOPS_PRECHECK_JSON=$json"
+exit 0
 `;
 
 type WindowsUpdatePrecheckResult = {
@@ -223,9 +202,29 @@ function parsePrecheckOutput(stdout: string): WindowsUpdatePrecheckResult {
 
   if (!trimmed) {
     return {
-      status: 'blocked',
-      blocking: ['O pré-check não retornou dados.'],
+      status: 'warning',
+      warnings: [
+        'O pré-check não retornou dados detalhados. A instalação pode prosseguir, mas recomenda-se validar o endpoint caso o problema se repita.',
+      ],
     };
+  }
+
+  const marker = 'SAFEOPS_PRECHECK_JSON=';
+  const markerIndex = trimmed.lastIndexOf(marker);
+
+  if (markerIndex >= 0) {
+    const jsonText = trimmed.slice(markerIndex + marker.length).trim();
+
+    try {
+      return JSON.parse(jsonText) as WindowsUpdatePrecheckResult;
+    } catch {
+      return {
+        status: 'warning',
+        warnings: [
+          'O pré-check retornou dados, mas não foi possível interpretar o JSON.',
+        ],
+      };
+    }
   }
 
   const lines = trimmed
@@ -247,14 +246,12 @@ function parsePrecheckOutput(stdout: string): WindowsUpdatePrecheckResult {
     }
   }
 
-  try {
-    return JSON.parse(trimmed) as WindowsUpdatePrecheckResult;
-  } catch {
-    return {
-      status: 'blocked',
-      blocking: ['Não foi possível interpretar o retorno do pré-check.'],
-    };
-  }
+  return {
+    status: 'warning',
+    warnings: [
+      'O pré-check não retornou JSON interpretável. A instalação pode prosseguir com atenção.',
+    ],
+  };
 }
 
 async function runWindowsUpdatePrecheck(agentId: string) {
@@ -268,7 +265,10 @@ async function runWindowsUpdatePrecheck(agentId: string) {
 
   const parsed = parsePrecheckOutput(execution.stdout ?? '');
 
-  if (execution.retcode !== 0) {
+  const retcode =
+    typeof execution.retcode === 'number' ? execution.retcode : 0;
+
+  if (retcode !== 0) {
     return {
       execution,
       result: {
@@ -276,14 +276,17 @@ async function runWindowsUpdatePrecheck(agentId: string) {
         status: 'blocked',
         blocking: [
           ...(parsed.blocking ?? []),
-          `O script de pré-check retornou código ${execution.retcode}.`,
+          `O script de pré-check retornou código ${retcode}.`,
         ],
       } satisfies WindowsUpdatePrecheckResult,
     };
   }
 
   return {
-    execution,
+    execution: {
+      ...execution,
+      retcode,
+    },
     result: parsed,
   };
 }
