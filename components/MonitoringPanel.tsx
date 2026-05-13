@@ -69,6 +69,12 @@ type CheckHistoryResponse = {
   attempted?: string[];
 };
 
+type AlertPolicyResponse = {
+  ok: boolean;
+  error?: string;
+  message?: string;
+};
+
 type MonitoringPanelProps = {
   customerId: string;
 };
@@ -78,6 +84,9 @@ const cardClassName =
 
 const secondaryButtonClassName =
   'inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60';
+
+const primaryButtonClassName =
+  'inline-flex items-center justify-center rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-60';
 
 const inputClassName =
   'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
@@ -583,6 +592,320 @@ function CheckDetailsModal({
 }
 
 
+function AlertPolicyModal({
+  customerId,
+  devices,
+  selectedDevice,
+  onClose,
+  onSaved,
+}: {
+  customerId: string;
+  devices: MonitoringDevice[];
+  selectedDevice: MonitoringDevice | null;
+  onClose: () => void;
+  onSaved: (message: string) => void;
+}) {
+  const [scopeType, setScopeType] = useState<'customer' | 'site' | 'device'>(
+    selectedDevice ? 'device' : 'customer',
+  );
+  const [siteName, setSiteName] = useState(selectedDevice?.siteName ?? '');
+  const [agentId, setAgentId] = useState(selectedDevice?.agentId ?? '');
+  const [warnPercent, setWarnPercent] = useState(85);
+  const [critPercent, setCritPercent] = useState(95);
+  const [frequencyMinutes, setFrequencyMinutes] = useState(15);
+  const [emails, setEmails] = useState('');
+  const [notifyOnRecovery, setNotifyOnRecovery] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const sites = useMemo(() => {
+    return Array.from(
+      new Set(devices.map((device) => device.siteName).filter(Boolean)),
+    ).sort((a, b) => String(a).localeCompare(String(b), 'pt-BR')) as string[];
+  }, [devices]);
+
+  const selectedAgent = useMemo(
+    () => devices.find((device) => device.agentId === agentId) ?? null,
+    [agentId, devices],
+  );
+
+  function parseEmails(value: string) {
+    return value
+      .split(/[;,\n]/)
+      .map((email) => email.trim())
+      .filter(Boolean);
+  }
+
+  async function saveAlert() {
+    try {
+      setIsSaving(true);
+      setErrorMessage(null);
+
+      const response = await fetch('/api/admin/monitoring/alert-policies', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          customerId,
+          name: 'Alerta de memória',
+          alertType: 'memory',
+          implementation: 'safesys',
+          checkName: '[SAFESYS] Windows Memory check',
+          scopeType,
+          siteName: scopeType === 'site' ? siteName : null,
+          deviceId: null,
+          agentId: scopeType === 'device' ? agentId : null,
+          hostname: selectedAgent?.hostname ?? null,
+          enabled: true,
+          warnPercent,
+          critPercent,
+          frequencyMinutes,
+          alertEmails: parseEmails(emails),
+          notifyOnRecovery,
+        }),
+      });
+
+      const data = (await response.json()) as AlertPolicyResponse;
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? 'Erro ao salvar alerta.');
+      }
+
+      onSaved(data.message ?? 'Alerta salvo com sucesso.');
+      onClose();
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Erro ao salvar alerta.',
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
+      <div className="max-h-[90vh] w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5">
+          <div>
+            <p className="text-sm font-medium text-brand-600">
+              Novo monitoramento
+            </p>
+            <h2 className="mt-1 text-xl font-bold text-brand-950">
+              Alerta de memória
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Defina somente os parâmetros operacionais. As informações técnicas
+              de integração são preenchidas automaticamente pelo SafeOps.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+          >
+            Fechar
+          </button>
+        </div>
+
+        <div className="max-h-[calc(90vh-96px)] overflow-y-auto px-6 py-5">
+          {errorMessage ? (
+            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {errorMessage}
+            </div>
+          ) : null}
+
+          <div className="grid gap-4 lg:grid-cols-3">
+            <label className="space-y-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Escopo
+              </span>
+              <select
+                className={inputClassName}
+                value={scopeType}
+                onChange={(event) => {
+                  const nextScope = event.target.value as typeof scopeType;
+                  setScopeType(nextScope);
+
+                  if (nextScope !== 'site') {
+                    setSiteName('');
+                  }
+
+                  if (nextScope !== 'device') {
+                    setAgentId('');
+                  }
+                }}
+              >
+                <option value="customer">Cliente inteiro</option>
+                <option value="site">Grupo/site</option>
+                <option value="device">Dispositivo</option>
+              </select>
+            </label>
+
+            <label className="space-y-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Grupo/site
+              </span>
+              <select
+                className={inputClassName}
+                value={siteName}
+                disabled={scopeType !== 'site'}
+                onChange={(event) => setSiteName(event.target.value)}
+              >
+                <option value="">Selecione</option>
+                {sites.map((site) => (
+                  <option key={site} value={site}>
+                    {site}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="space-y-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Dispositivo
+              </span>
+              <select
+                className={inputClassName}
+                value={agentId}
+                disabled={scopeType !== 'device'}
+                onChange={(event) => setAgentId(event.target.value)}
+              >
+                <option value="">Selecione</option>
+                {devices.map((device) => (
+                  <option key={device.agentId} value={device.agentId}>
+                    {device.hostname} — {device.siteName ?? 'Sem site'}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="mt-5 grid gap-4 lg:grid-cols-3">
+            <label className="space-y-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Warning %
+              </span>
+              <input
+                className={inputClassName}
+                type="number"
+                min={1}
+                max={100}
+                value={warnPercent}
+                onChange={(event) => setWarnPercent(Number(event.target.value))}
+              />
+            </label>
+
+            <label className="space-y-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Crítico %
+              </span>
+              <input
+                className={inputClassName}
+                type="number"
+                min={1}
+                max={100}
+                value={critPercent}
+                onChange={(event) => setCritPercent(Number(event.target.value))}
+              />
+            </label>
+
+            <label className="space-y-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Frequência
+              </span>
+              <select
+                className={inputClassName}
+                value={frequencyMinutes}
+                onChange={(event) =>
+                  setFrequencyMinutes(Number(event.target.value))
+                }
+              >
+                <option value={5}>A cada 5 minutos</option>
+                <option value={10}>A cada 10 minutos</option>
+                <option value={15}>A cada 15 minutos</option>
+                <option value={30}>A cada 30 minutos</option>
+                <option value={60}>A cada 1 hora</option>
+                <option value={120}>A cada 2 horas</option>
+                <option value={240}>A cada 4 horas</option>
+                <option value={720}>A cada 12 horas</option>
+                <option value={1440}>A cada 24 horas</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_260px]">
+            <label className="space-y-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                E-mails de alerta
+              </span>
+              <textarea
+                className={`${inputClassName} min-h-28 resize-y`}
+                value={emails}
+                onChange={(event) => setEmails(event.target.value)}
+                placeholder="um@email.com&#10;outro@email.com"
+              />
+              <span className="text-xs text-slate-400">
+                Um e-mail por linha, ou separados por vírgula/ponto e vírgula.
+              </span>
+            </label>
+
+            <div className="rounded-xl bg-slate-50 p-4">
+              <p className="text-sm font-semibold text-brand-950">
+                Automatizado pelo SafeOps
+              </p>
+              <div className="mt-3 space-y-2 text-sm text-slate-600">
+                <p>Integração de alerta</p>
+                <p>Identificação do cliente</p>
+                <p>Identificação do grupo</p>
+                <p>Nome do monitoramento</p>
+              </div>
+
+              <label className="mt-4 flex items-start gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={notifyOnRecovery}
+                  onChange={(event) =>
+                    setNotifyOnRecovery(event.target.checked)
+                  }
+                  className="mt-1 h-4 w-4 rounded border-slate-300"
+                />
+                Notificar quando voltar ao normal.
+              </label>
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            Nesta etapa o alerta será salvo como política. A aplicação automática
+            no monitoramento real será ativada no próximo pacote.
+          </div>
+
+          <div className="mt-6 flex flex-wrap justify-end gap-3">
+            <button
+              type="button"
+              className={secondaryButtonClassName}
+              onClick={onClose}
+            >
+              Cancelar
+            </button>
+
+            <button
+              type="button"
+              className={primaryButtonClassName}
+              disabled={isSaving}
+              onClick={saveAlert}
+            >
+              {isSaving ? 'Salvando...' : 'Salvar alerta'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 export function MonitoringPanel({ customerId }: MonitoringPanelProps) {
   const [devices, setDevices] = useState<MonitoringDevice[]>([]);
   const [totals, setTotals] = useState<MonitoringTotals>();
@@ -593,6 +916,7 @@ export function MonitoringPanel({ customerId }: MonitoringPanelProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [selectedCheck, setSelectedCheck] = useState<MonitoringCheck | null>(null);
+  const [showAlertModal, setShowAlertModal] = useState(false);
 
   const selectedDevice = useMemo(
     () => devices.find((device) => device.agentId === selectedAgentId) ?? null,
@@ -678,9 +1002,25 @@ export function MonitoringPanel({ customerId }: MonitoringPanelProps) {
           <h1 className="mt-1 text-2xl font-bold text-brand-950">Monitoramento SafeOps</h1>
         </div>
 
-        <button type="button" className={secondaryButtonClassName} disabled={!customerId || isLoading} onClick={loadMonitoring}>
-          {isLoading ? 'Atualizando...' : 'Atualizar'}
-        </button>
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            className={primaryButtonClassName}
+            disabled={!customerId}
+            onClick={() => setShowAlertModal(true)}
+          >
+            Criar alerta
+          </button>
+
+          <button
+            type="button"
+            className={secondaryButtonClassName}
+            disabled={!customerId || isLoading}
+            onClick={loadMonitoring}
+          >
+            {isLoading ? 'Atualizando...' : 'Atualizar'}
+          </button>
+        </div>
       </div>
 
       {statusMessage ? (
@@ -843,6 +1183,16 @@ export function MonitoringPanel({ customerId }: MonitoringPanelProps) {
           )}
         </div>
       </div>
+
+      {showAlertModal ? (
+        <AlertPolicyModal
+          customerId={customerId}
+          devices={devices}
+          selectedDevice={selectedDevice}
+          onClose={() => setShowAlertModal(false)}
+          onSaved={(message) => setStatusMessage(message)}
+        />
+      ) : null}
 
       {selectedCheck ? (
         <CheckDetailsModal
