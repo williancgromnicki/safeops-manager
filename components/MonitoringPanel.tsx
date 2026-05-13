@@ -122,22 +122,6 @@ function checkLabel(status: MonitoringCheck['status']) {
   return 'Sem status';
 }
 
-function getHistoryValueLabel(item: CheckHistoryItem) {
-  if (typeof item.value === 'number') {
-    return `${item.value.toFixed(1)}%`;
-  }
-
-  return item.status ?? '—';
-}
-
-function getBarWidth(value: number | null) {
-  if (typeof value !== 'number' || Number.isNaN(value)) {
-    return 0;
-  }
-
-  return Math.max(0, Math.min(100, value));
-}
-
 function getThresholdNumber(value?: string | null) {
   if (!value) {
     return null;
