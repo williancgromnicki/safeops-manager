@@ -90,6 +90,7 @@ function checkStatus(record: RawCheck) {
   const error =
     getBool(record, ['error', 'is_error', 'has_error']) === true ||
     raw.includes('fail') ||
+    raw.includes('failing') ||
     raw.includes('error') ||
     raw.includes('crit');
 
@@ -105,6 +106,7 @@ function checkStatus(record: RawCheck) {
   const ok =
     raw.includes('ok') ||
     raw.includes('pass') ||
+    raw.includes('passing') ||
     raw.includes('success') ||
     raw.includes('normal');
 
@@ -200,29 +202,79 @@ function extractParameters(raw: RawCheck) {
 }
 
 
+function getRecordField(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+
+  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+
+  return null;
+}
+
 function normalizeCheck(raw: RawCheck, index: number) {
+  const checkResult = getRecordField(raw, 'check_result');
+  const source = checkResult ? { ...raw, ...checkResult } : raw;
   const type = checkType(
     getStr(raw, ['check_type', 'type', 'kind', 'monitor_type', 'category']),
   );
-  const status = checkStatus(raw);
+  const status = checkStatus(source);
+
+  const historyId =
+    checkResult
+      ? getStr(checkResult, ['id', 'pk', 'check_result_id', 'uuid'])
+      : null;
+
+  const assignedCheckId = getStr(raw, ['id', 'pk', 'check_id', 'uuid']);
+
+  const resultValue =
+    getStr(checkResult ?? {}, [
+      'more_info',
+      'output',
+      'details',
+      'last_output',
+      'last_result',
+      'result_text',
+      'stdout',
+      'stderr',
+    ]) ??
+    getStr(raw, [
+      'value',
+      'output',
+      'details',
+      'last_output',
+      'last_result',
+      'result_text',
+      'more_info',
+    ]);
 
   return {
-    id: getStr(raw, ['id', 'pk', 'check_id', 'uuid']) ?? `check-${index}`,
+    // O histórico usa o ID do resultado do check, não o ID do check atribuído.
+    id: historyId ?? assignedCheckId ?? `check-${index}`,
+    assignedCheckId,
     name:
-      getStr(raw, ['name', 'check_name', 'title', 'description', 'display_name']) ??
-      `${type} check`,
+      getStr(raw, [
+        'readable_desc',
+        'name',
+        'check_name',
+        'title',
+        'description',
+        'display_name',
+      ]) ?? `${type} check`,
     type,
     status: status.status,
     severity: status.severity,
-    value: getStr(raw, ['value', 'output', 'details', 'last_output', 'last_result', 'result_text']),
+    value: resultValue,
     threshold: getStr(raw, [
-      'threshold',
       'warning_threshold',
       'critical_threshold',
+      'threshold',
       'warn_threshold',
       'fail_threshold',
     ]),
-    lastRun: getStr(raw, ['last_run', 'last_check', 'checked_at', 'updated_at', 'modified']),
+    lastRun:
+      getStr(checkResult ?? {}, ['last_run', 'last_check', 'checked_at', 'updated_at', 'modified']) ??
+      getStr(raw, ['last_run', 'last_check', 'checked_at', 'updated_at', 'modified']),
     enabled: getBool(raw, ['enabled', 'is_active', 'active']) ?? true,
     parameters: extractParameters(raw),
     history: extractHistory(raw),
