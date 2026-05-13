@@ -100,21 +100,76 @@ function readHistoryList(response: unknown): RawHistoryItem[] {
   return [];
 }
 
+function extractPercentFromText(text: string, patterns: RegExp[]) {
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+
+    if (!match?.[1]) {
+      continue;
+    }
+
+    const parsed = Number(match[1].replace(',', '.'));
+
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+function inferPremiumMetricValue(output?: string | null) {
+  if (!output) {
+    return null;
+  }
+
+  const text = output.replace(/\s+/g, ' ').trim();
+
+  // Checks Premium Safesys de disco devem plotar o percentual livre,
+  // porque os thresholds são baseados em espaço livre mínimo.
+  const diskFree = extractPercentFromText(text, [
+    /Free:\s*([0-9]+(?:[.,][0-9]+)?)%/i,
+    /Free Space:\s*([0-9]+(?:[.,][0-9]+)?)%/i,
+  ]);
+
+  if (diskFree !== null && /disk|drive|space/i.test(text)) {
+    return diskFree;
+  }
+
+  // Checks Premium Safesys de memória/CPU plotam uso percentual.
+  const usage = extractPercentFromText(text, [
+    /Memory Usage:\s*([0-9]+(?:[.,][0-9]+)?)%/i,
+    /CPU Usage:\s*([0-9]+(?:[.,][0-9]+)?)%/i,
+    /Used:\s*([0-9]+(?:[.,][0-9]+)?)%/i,
+    /Usage:\s*([0-9]+(?:[.,][0-9]+)?)%/i,
+  ]);
+
+  if (usage !== null) {
+    return usage;
+  }
+
+  return null;
+}
+
 function normalizeHistoryItem(item: RawHistoryItem, index: number) {
+  const output = typeof item.results === 'string' ? item.results : null;
+  const premiumMetricValue = inferPremiumMetricValue(output);
   const rawValue = item.y;
-  const value =
+  const fallbackValue =
     typeof rawValue === 'number'
       ? rawValue
       : typeof rawValue === 'string' && Number.isFinite(Number(rawValue))
         ? Number(rawValue)
         : null;
 
+  const value = premiumMetricValue ?? fallbackValue;
+
   return {
     id: `history-${index}`,
     checkedAt: typeof item.x === 'string' ? item.x : null,
     value,
     status: null,
-    output: typeof item.results === 'string' ? item.results : null,
+    output,
   };
 }
 

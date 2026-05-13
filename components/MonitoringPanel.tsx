@@ -127,16 +127,52 @@ function getThresholdNumber(value?: string | null) {
     return null;
   }
 
-  const match = value.match(/\d+(?:\.\d+)?/);
+  const match = value.match(/\d+(?:[.,]\d+)?/);
 
   if (!match) {
     return null;
   }
 
-  const parsed = Number(match[0]);
+  const parsed = Number(match[0].replace(',', '.'));
 
   return Number.isFinite(parsed) ? parsed : null;
 }
+
+function findThresholdValue(input: {
+  parameters: string[];
+  resultText?: string | null;
+  threshold?: string | null;
+  names: string[];
+}) {
+  const candidates = [
+    ...input.parameters,
+    input.resultText ?? '',
+    input.threshold ?? '',
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = candidate.toLowerCase();
+
+    if (!input.names.some((name) => normalized.includes(name))) {
+      continue;
+    }
+
+    const value = getThresholdNumber(candidate);
+
+    if (value !== null) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function isDiskFreeMetric(check: MonitoringCheck) {
+  const text = `${check.name} ${check.value ?? ''}`.toLowerCase();
+
+  return text.includes('disk') || text.includes('drive') || text.includes('free:');
+}
+
 
 function getChartPoints(history: CheckHistoryItem[], width: number, height: number) {
   const numericItems = history.filter((item) => typeof item.value === 'number');
@@ -231,16 +267,19 @@ function CheckDetailsModal({
 
   const history = remoteHistory;
   const hasNumericHistory = history.some((item) => typeof item.value === 'number');
-  const warningThreshold = getThresholdNumber(
-    parameters.find((parameter) => parameter.toLowerCase().includes('warning')) ??
-      check.threshold,
-  );
-  const criticalThreshold = getThresholdNumber(
-    parameters.find((parameter) =>
-      parameter.toLowerCase().includes('critical') ||
-      parameter.toLowerCase().includes('error'),
-    ),
-  );
+  const warningThreshold = findThresholdValue({
+    parameters,
+    resultText: check.value,
+    threshold: check.threshold,
+    names: ['warning', 'warn'],
+  });
+  const criticalThreshold = findThresholdValue({
+    parameters,
+    resultText: check.value,
+    threshold: check.threshold,
+    names: ['critical', 'error', 'crit'],
+  });
+  const metricLabel = isDiskFreeMetric(check) ? 'Espaço livre' : 'Uso';
   const chartWidth = 900;
   const chartHeight = 260;
   const chart = getChartPoints(history, chartWidth, chartHeight);
@@ -393,7 +432,7 @@ function CheckDetailsModal({
                       ) : null}
                       {chart.lastPoint ? (
                         <span className="rounded-full bg-brand-50 px-2 py-1 font-semibold text-brand-700">
-                          Atual: {chart.lastPoint.value.toFixed(1)}%
+                          {metricLabel}: {chart.lastPoint.value.toFixed(1)}%
                         </span>
                       ) : null}
                     </div>
