@@ -138,6 +138,54 @@ function getBarWidth(value: number | null) {
   return Math.max(0, Math.min(100, value));
 }
 
+function getThresholdNumber(value?: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const match = value.match(/\d+(?:\.\d+)?/);
+
+  if (!match) {
+    return null;
+  }
+
+  const parsed = Number(match[0]);
+
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getChartPoints(history: CheckHistoryItem[], width: number, height: number) {
+  const numericItems = history.filter((item) => typeof item.value === 'number');
+
+  if (numericItems.length === 0) {
+    return {
+      numericItems,
+      points: '',
+      lastPoint: null as { x: number; y: number; value: number } | null,
+    };
+  }
+
+  const maxIndex = Math.max(1, numericItems.length - 1);
+  const pointsArray = numericItems.map((item, index) => {
+    const value = item.value ?? 0;
+    const x = (index / maxIndex) * width;
+    const y = height - (Math.max(0, Math.min(100, value)) / 100) * height;
+
+    return {
+      x,
+      y,
+      value,
+      item,
+    };
+  });
+
+  return {
+    numericItems,
+    points: pointsArray.map((point) => `${point.x},${point.y}`).join(' '),
+    lastPoint: pointsArray[pointsArray.length - 1] ?? null,
+  };
+}
+
 function CheckDetailsModal({
   check,
   customerId,
@@ -199,6 +247,19 @@ function CheckDetailsModal({
 
   const history = remoteHistory;
   const hasNumericHistory = history.some((item) => typeof item.value === 'number');
+  const warningThreshold = getThresholdNumber(
+    parameters.find((parameter) => parameter.toLowerCase().includes('warning')) ??
+      check.threshold,
+  );
+  const criticalThreshold = getThresholdNumber(
+    parameters.find((parameter) =>
+      parameter.toLowerCase().includes('critical') ||
+      parameter.toLowerCase().includes('error'),
+    ),
+  );
+  const chartWidth = 900;
+  const chartHeight = 260;
+  const chart = getChartPoints(history, chartWidth, chartHeight);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
@@ -313,7 +374,7 @@ function CheckDetailsModal({
               <div>
                 <h3 className="font-semibold text-brand-950">Histórico de execução</h3>
                 <p className="mt-1 text-sm text-slate-500">
-                  Quando houver amostras numéricas, o SafeOps exibe uma visualização simples de tendência.
+                  Visualização gráfica dos valores coletados ao longo do tempo.
                 </p>
               </div>
               <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
@@ -333,50 +394,163 @@ function CheckDetailsModal({
             ) : (
               <div className="mt-4 space-y-3">
                 {hasNumericHistory ? (
-                  <div className="rounded-xl bg-slate-50 p-4">
-                    <div className="flex h-36 items-end gap-2">
-                      {history.slice(-20).map((item) => (
-                        <div key={item.id} className="flex h-full flex-1 flex-col justify-end">
-                          <div
-                            className="min-h-1 rounded-t bg-brand-600"
-                            style={{ height: `${getBarWidth(item.value)}%` }}
-                            title={`${formatDate(item.checkedAt)} · ${getHistoryValueLabel(item)}`}
-                          />
-                        </div>
-                      ))}
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                      <span>{history.length} amostras no período selecionado</span>
+                      {warningThreshold !== null ? (
+                        <span className="rounded-full bg-amber-50 px-2 py-1 font-semibold text-amber-700">
+                          Warning: {warningThreshold}%
+                        </span>
+                      ) : null}
+                      {criticalThreshold !== null ? (
+                        <span className="rounded-full bg-red-50 px-2 py-1 font-semibold text-red-700">
+                          Crítico: {criticalThreshold}%
+                        </span>
+                      ) : null}
+                      {chart.lastPoint ? (
+                        <span className="rounded-full bg-brand-50 px-2 py-1 font-semibold text-brand-700">
+                          Atual: {chart.lastPoint.value.toFixed(1)}%
+                        </span>
+                      ) : null}
                     </div>
-                    <p className="mt-2 text-xs text-slate-500">
-                      Últimas {Math.min(history.length, 20)} amostras
-                    </p>
-                  </div>
-                ) : null}
 
-                <div className="overflow-hidden rounded-xl border border-slate-200">
-                  <table className="min-w-full divide-y divide-slate-200 text-sm">
-                    <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      <tr>
-                        <th className="px-4 py-3">Data</th>
-                        <th className="px-4 py-3">Valor</th>
-                        <th className="px-4 py-3">Status</th>
-                        <th className="px-4 py-3">Resultado</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {history.slice().reverse().map((item) => (
-                        <tr key={item.id}>
-                          <td className="px-4 py-3 text-slate-600">{formatDate(item.checkedAt)}</td>
-                          <td className="px-4 py-3 font-semibold text-brand-950">{getHistoryValueLabel(item)}</td>
-                          <td className="px-4 py-3 text-slate-600">{item.status ?? '—'}</td>
-                          <td className="max-w-md px-4 py-3">
-                            <div className="max-h-24 overflow-auto whitespace-pre-wrap break-words text-slate-600">
-                              {item.output ?? '—'}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                    <div className="overflow-x-auto">
+                      <svg
+                        viewBox={`0 0 ${chartWidth} ${chartHeight + 52}`}
+                        className="h-80 min-w-[720px] w-full rounded-xl bg-slate-50"
+                        role="img"
+                        aria-label={`Histórico do check ${check.name}`}
+                      >
+                        {[0, 20, 40, 60, 80, 100].map((tick) => {
+                          const y = chartHeight - (tick / 100) * chartHeight + 20;
+
+                          return (
+                            <g key={tick}>
+                              <line
+                                x1="54"
+                                y1={y}
+                                x2={chartWidth - 24}
+                                y2={y}
+                                stroke="#e2e8f0"
+                                strokeWidth="1"
+                              />
+                              <text
+                                x="16"
+                                y={y + 4}
+                                className="fill-slate-500 text-[11px] font-semibold"
+                              >
+                                {tick}%
+                              </text>
+                            </g>
+                          );
+                        })}
+
+                        {warningThreshold !== null ? (
+                          <g>
+                            <line
+                              x1="54"
+                              y1={chartHeight - (warningThreshold / 100) * chartHeight + 20}
+                              x2={chartWidth - 24}
+                              y2={chartHeight - (warningThreshold / 100) * chartHeight + 20}
+                              stroke="#f59e0b"
+                              strokeWidth="2"
+                              strokeDasharray="6 4"
+                            />
+                            <text
+                              x="62"
+                              y={chartHeight - (warningThreshold / 100) * chartHeight + 14}
+                              className="fill-amber-600 text-[11px] font-bold"
+                            >
+                              Warning Threshold
+                            </text>
+                          </g>
+                        ) : null}
+
+                        {criticalThreshold !== null ? (
+                          <g>
+                            <line
+                              x1="54"
+                              y1={chartHeight - (criticalThreshold / 100) * chartHeight + 20}
+                              x2={chartWidth - 24}
+                              y2={chartHeight - (criticalThreshold / 100) * chartHeight + 20}
+                              stroke="#dc2626"
+                              strokeWidth="2"
+                              strokeDasharray="6 4"
+                            />
+                            <text
+                              x="62"
+                              y={chartHeight - (criticalThreshold / 100) * chartHeight + 14}
+                              className="fill-red-600 text-[11px] font-bold"
+                            >
+                              Error Threshold
+                            </text>
+                          </g>
+                        ) : null}
+
+                        <polyline
+                          points={chart.points
+                            .split(' ')
+                            .map((pair) => {
+                              const [rawX, rawY] = pair.split(',').map(Number);
+                              return `${rawX + 54},${rawY + 20}`;
+                            })
+                            .join(' ')}
+                          fill="none"
+                          stroke="#0284c7"
+                          strokeWidth="3"
+                          strokeLinejoin="round"
+                          strokeLinecap="round"
+                        />
+
+                        {chart.numericItems.slice(-18).map((item, index, arr) => {
+                          if (!item.checkedAt) {
+                            return null;
+                          }
+
+                          if (index !== 0 && index !== arr.length - 1 && index % 4 !== 0) {
+                            return null;
+                          }
+
+                          const x = 54 + (index / Math.max(1, arr.length - 1)) * (chartWidth - 78);
+
+                          return (
+                            <text
+                              key={`${item.id}-label`}
+                              x={x}
+                              y={chartHeight + 44}
+                              textAnchor="middle"
+                              className="fill-slate-500 text-[10px] font-semibold"
+                            >
+                              {formatDate(item.checkedAt).slice(0, 5)}
+                            </text>
+                          );
+                        })}
+
+                        {chart.lastPoint ? (
+                          <g>
+                            <circle
+                              cx={chart.lastPoint.x + 54}
+                              cy={chart.lastPoint.y + 20}
+                              r="5"
+                              fill="#0284c7"
+                            />
+                            <text
+                              x={chart.lastPoint.x + 42}
+                              y={chart.lastPoint.y + 8}
+                              className="fill-brand-700 text-[12px] font-bold"
+                            >
+                              {chart.lastPoint.value.toFixed(1)}%
+                            </text>
+                          </g>
+                        ) : null}
+                      </svg>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                    Este check possui histórico, mas os valores retornados não são numéricos para gerar gráfico.
+                  </div>
+                )}
               </div>
             )}
           </div>
