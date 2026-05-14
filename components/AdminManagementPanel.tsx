@@ -88,6 +88,9 @@ const inputClassName =
 const buttonClassName =
   'inline-flex items-center justify-center rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-60';
 
+const secondaryButtonClassName =
+  'inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60';
+
 export function AdminManagementPanel({ customers }: AdminManagementPanelProps) {
   const router = useRouter();
 
@@ -95,6 +98,7 @@ export function AdminManagementPanel({ customers }: AdminManagementPanelProps) {
   const [isCreatingUser, setIsCreatingUser] = useState(false);
   const [isSavingPermission, setIsSavingPermission] = useState(false);
   const [isSavingLinks, setIsSavingLinks] = useState(false);
+  const [isRefreshingInstallers, setIsRefreshingInstallers] = useState(false);
 
   const [status, setStatus] = useState<FormStatus>(null);
 
@@ -327,6 +331,43 @@ export function AdminManagementPanel({ customers }: AdminManagementPanelProps) {
     }
   }
 
+  async function refreshInstallers() {
+    try {
+      setIsRefreshingInstallers(true);
+      setStatus(null);
+
+      const response = await fetch('/api/refresh', {
+        method: 'POST',
+        cache: 'no-store',
+      });
+
+      const data = await parseApiResponse(response);
+
+      if (!data.ok) {
+        throw new Error(data.error ?? 'Erro ao atualizar instaladores.');
+      }
+
+      setStatus({
+        type: 'success',
+        message:
+          data.message ??
+          'Atualização solicitada com sucesso. Os instaladores foram sincronizados.',
+      });
+
+      router.refresh();
+    } catch (error) {
+      setStatus({
+        type: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Erro ao atualizar instaladores.',
+      });
+    } finally {
+      setIsRefreshingInstallers(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <StatusMessage status={status} />
@@ -338,8 +379,8 @@ export function AdminManagementPanel({ customers }: AdminManagementPanelProps) {
         >
           <h3 className="section-title">Cadastrar cliente</h3>
           <p className="mt-2 text-sm text-slate-600">
-            Crie clientes manualmente quando necessário. Clientes criados pelo
-            sync do TRMM também aparecerão automaticamente aqui.
+            Crie clientes manualmente quando necessário. Clientes sincronizados
+            automaticamente também aparecerão aqui.
           </p>
 
           <div className="mt-5 space-y-4">
@@ -482,11 +523,24 @@ export function AdminManagementPanel({ customers }: AdminManagementPanelProps) {
           onSubmit={saveDeploymentLinks}
           className="rounded-2xl border border-surface-border bg-white p-5 shadow-sm"
         >
-          <h3 className="section-title">Instaladores TRMM</h3>
-          <p className="mt-2 text-sm text-slate-600">
-            Cadastre links de instalação do agente para disponibilizar ao
-            cliente durante a POC.
-          </p>
+          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+            <div>
+              <h3 className="section-title">Instaladores de agente</h3>
+              <p className="mt-2 text-sm text-slate-600">
+                Cadastre ou atualize links de instalação para disponibilizar ao
+                cliente durante a POC.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              className={secondaryButtonClassName}
+              disabled={isRefreshingInstallers}
+              onClick={refreshInstallers}
+            >
+              {isRefreshingInstallers ? 'Atualizando...' : 'Atualizar instaladores'}
+            </button>
+          </div>
 
           <div className="mt-5 space-y-4">
             <FieldLabel label="Cliente">
