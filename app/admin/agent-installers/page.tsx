@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { EmptyState } from '@/components/EmptyState';
 import { resolveCurrentCustomer } from '@/lib/data/get-current-customer';
 import { createClient } from '@/lib/supabase/server';
+import { RefreshPageButton } from '@/components/RefreshPageButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -286,8 +287,8 @@ export default async function AgentInstallersPage({
   const installers = (data ?? []) as unknown as AgentInstallerRow[];
 
   return (
-    <section className="space-y-6">
-      <div className="rounded-2xl border border-surface-border bg-white p-5 shadow-sm">
+    <div className="rounded-2xl border border-surface-border bg-white p-5 shadow-sm">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="section-title">Instaladores de agentes</h2>
           <p className="mt-2 text-sm leading-relaxed text-slate-600">
@@ -299,7 +300,10 @@ export default async function AgentInstallersPage({
             .
           </p>
         </div>
+    
+        <RefreshPageButton />
       </div>
+    </div>
 
       {installers.length === 0 ? (
         <EmptyState
