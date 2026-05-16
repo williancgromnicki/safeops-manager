@@ -329,24 +329,36 @@ function validateLinuxScript(script: string): string {
 
 async function fetchOfficialLinuxScript(installer: InstallerRow): Promise<string> {
   const payload = buildOfficialInstallerPayload(installer);
+  const apiKey = cleanString(process.env.TRMM_API_KEY);
+
+  if (!apiKey) {
+    throw new Error(
+      'TRMM_API_KEY não configurada no ambiente. Configure a chave para permitir a geração server-side do instalador Linux.',
+    );
+  }
+
   const headers: Record<string, string> = {
     Accept: 'application/json, text/plain, */*',
     'Content-Type': 'application/json',
-    Origin: process.env.TRMM_INSTALLER_ORIGIN?.trim() ?? 'https://safeops.safesys.net.br',
-    Referer: process.env.TRMM_INSTALLER_REFERER?.trim() ?? 'https://safeops.safesys.net.br/',
+    'X-API-Key': apiKey,
+    Origin:
+      process.env.TRMM_INSTALLER_ORIGIN?.trim() ??
+      'https://safeops.safesys.net.br',
+    Referer:
+      process.env.TRMM_INSTALLER_REFERER?.trim() ??
+      'https://safeops.safesys.net.br/',
+    'User-Agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0',
   };
 
   /*
-   * Importante: o HAR capturado mostrou que o endpoint /agents/installer/
-   * gera o script oficial sem Authorization/Cookie.
-   *
-   * Quando enviamos Authorization: Token <TRMM_API_KEY>, este endpoint tenta
-   * validar esse token como token de sessão/API do próprio backend e pode
-   * responder HTTP 401 com {"detail":"Invalid token."}.
-   *
-   * Por isso NÃO enviamos Authorization nesta chamada. O controle de acesso
-   * permanece no SafeOps antes desta etapa, validando o usuário logado e o
-   * vínculo dele com o cliente do instalador.
+   * Importante:
+   * - NÃO usamos Authorization: Token <TRMM_API_KEY>. Teste anterior retornou
+   *   {"detail":"Invalid token."}.
+   * - Também não podemos chamar sem credencial a partir do backend do SafeOps,
+   *   pois a API responde {"detail":"Authentication credentials were not provided."}.
+   * - A credencial correta para chamadas server-side neste projeto é X-API-Key,
+   *   o mesmo padrão já usado na integração existente com a API.
    */
 
   const response = await fetch(getInstallerApiUrl(), {
