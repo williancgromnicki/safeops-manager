@@ -64,15 +64,37 @@ function normalizeRole(role?: string | null): string {
   return cleanString(role)?.toLowerCase() ?? '';
 }
 
+function normalizeDeploymentBaseUrl(value?: string | null): string | null {
+  const cleaned = value?.trim();
+
+  if (!cleaned) {
+    return null;
+  }
+
+  return cleaned
+    .replace(/\/+$/, '')
+    .replace(/\/api\/v\d+$/i, '')
+    .replace(/\/api$/i, '');
+}
+
 function getApiBaseUrl(): string {
   return (
-    process.env.TRMM_DEPLOYMENT_BASE_URL?.trim() ??
-    process.env.TRMM_API_URL?.trim() ??
+    normalizeDeploymentBaseUrl(process.env.TRMM_DEPLOYMENT_BASE_URL) ??
+    normalizeDeploymentBaseUrl(process.env.SAFEOPS_TRMM_PUBLIC_BASE_URL) ??
+    normalizeDeploymentBaseUrl(process.env.TRMM_API_URL) ??
     'https://api.safesys.net.br'
-  ).replace(/\/+$/, '');
+  );
 }
 
 function getInstallerApiUrl(): string {
+  /*
+   * Atenção: este endpoint NÃO fica no namespace /api/v3.
+   * No HAR oficial ele aparece em:
+   *   https://api.safesys.net.br/agents/installer/
+   *
+   * Como TRMM_API_URL normalmente pode apontar para a API versionada,
+   * normalizamos/removemos /api/v3 antes de montar a URL do instalador.
+   */
   return `${getApiBaseUrl()}/agents/installer/`;
 }
 
@@ -338,7 +360,7 @@ async function fetchOfficialLinuxScript(installer: InstallerRow): Promise<string
 
   if (!response.ok) {
     throw new Error(
-      `Erro ao gerar instalador Linux na API: HTTP ${response.status} - ${body.slice(0, 300)}`,
+      `Erro ao gerar instalador Linux na API: HTTP ${response.status} em ${getInstallerApiUrl()} - ${body.slice(0, 300)}`,
     );
   }
 
