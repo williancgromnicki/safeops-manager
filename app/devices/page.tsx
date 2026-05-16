@@ -92,7 +92,7 @@ export default async function DevicesPage({ searchParams }: DevicesPageProps) {
 
         <p className="mt-1 text-xs text-slate-500">
           A sincronização automática ocorre periodicamente. O botão de atualização
-          na barra de grupos solicita uma sincronização manual com o TRMM.
+          na barra de grupos solicita uma sincronização global manual do SafeOps.
         </p>
       </div>
 

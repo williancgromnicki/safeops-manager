@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 
 import { EmptyState } from '@/components/EmptyState';
+import { RefreshDevicesButton } from '@/components/RefreshDevicesButton';
 import { resolveCurrentCustomer } from '@/lib/data/get-current-customer';
 import { createClient } from '@/lib/supabase/server';
 
@@ -140,17 +141,6 @@ function ExpiryBadge({ expiresAt }: { expiresAt?: string | null }) {
     <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-600/20">
       Disponível
     </span>
-  );
-}
-
-function RefreshLink({ href }: { href: string }) {
-  return (
-    <a
-      href={href}
-      className="inline-flex items-center justify-center rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-800"
-    >
-      Atualizar
-    </a>
   );
 }
 
@@ -295,11 +285,6 @@ export default async function AgentInstallersPage({
   }
 
   const installers = (data ?? []) as unknown as AgentInstallerRow[];
-  const refreshHref = query.customerId
-    ? `/admin/agent-installers?customerId=${encodeURIComponent(
-        query.customerId,
-      )}&refresh=${Date.now()}`
-    : `/admin/agent-installers?refresh=${Date.now()}`;
 
   return (
     <section className="space-y-6">
@@ -315,9 +300,13 @@ export default async function AgentInstallersPage({
               </span>
               .
             </p>
+            <p className="mt-1 text-xs text-slate-500">
+              O botão Atualizar executa a sincronização global SafeOps antes de
+              recarregar os dados desta tela.
+            </p>
           </div>
 
-          <RefreshLink href={refreshHref} />
+          <RefreshDevicesButton label="Atualizar" />
         </div>
       </div>
 

@@ -5,6 +5,17 @@ import { useRouter } from "next/navigation";
 
 type RefreshDevicesButtonProps = {
   iconOnly?: boolean;
+  label?: string;
+  title?: string;
+};
+
+type RefreshResponse = {
+  ok?: boolean;
+  error?: string;
+  message?: string;
+  trigger?: string;
+  status?: string;
+  payload?: unknown;
 };
 
 function RefreshIcon({ spinning = false }: { spinning?: boolean }) {
@@ -45,8 +56,17 @@ function getErrorMessage(error: unknown): string {
   return "Erro desconhecido ao sincronizar dados.";
 }
 
+function getSuccessMessage(data: RefreshResponse): string {
+  return (
+    data.message ??
+    "Sincronização global solicitada com sucesso. Aguarde alguns segundos e a tela será atualizada."
+  );
+}
+
 export function RefreshDevicesButton({
   iconOnly = false,
+  label = "Atualizar agora",
+  title = "Executar sincronização global SafeOps",
 }: RefreshDevicesButtonProps) {
   const router = useRouter();
 
@@ -63,21 +83,34 @@ export function RefreshDevicesButton({
 
       const response = await fetch("/api/refresh", {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
         cache: "no-store",
+        body: JSON.stringify({
+          source: "safeops-ui",
+          scope: "global",
+        }),
       });
 
-      const data = await response.json();
+      const data = (await response.json().catch(() => null)) as
+        | RefreshResponse
+        | null;
 
-      if (!response.ok || !data.ok) {
+      if (!response.ok || !data?.ok) {
         throw new Error(
-          data?.error || "Não foi possível sincronizar os dados.",
+          data?.error || "Não foi possível executar a sincronização global.",
         );
       }
 
       setLastRefresh(new Date());
-      setMessage("Sincronização solicitada com sucesso.");
+      setMessage(getSuccessMessage(data));
 
-      router.refresh();
+      // O runner atualiza o banco de forma síncrona. Este pequeno intervalo evita
+      // recarregar a tela antes do Supabase refletir os novos dados.
+      window.setTimeout(() => {
+        router.refresh();
+      }, 1200);
     } catch (error: unknown) {
       setHasError(true);
       setMessage(getErrorMessage(error));
@@ -87,13 +120,13 @@ export function RefreshDevicesButton({
   }
 
   return (
-    <div className="flex flex-col items-start gap-1">
+    <div className="relative flex flex-col items-start gap-1">
       <button
         type="button"
         onClick={handleRefresh}
         disabled={isRefreshing}
-        title="Sincronizar dados com o TRMM"
-        aria-label="Sincronizar dados com o TRMM"
+        title={title}
+        aria-label={title}
         className={[
           "inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60",
           iconOnly ? "h-10 w-10 px-0 py-0" : "px-3 py-2",
@@ -101,14 +134,20 @@ export function RefreshDevicesButton({
       >
         <RefreshIcon spinning={isRefreshing} />
 
-        {iconOnly ? null : isRefreshing ? "Atualizando..." : "Atualizar agora"}
+        {iconOnly ? null : isRefreshing ? "Sincronizando..." : label}
       </button>
 
-      {message && !iconOnly ? (
+      {message ? (
         <span
-          className={`text-xs ${
-            hasError ? "text-red-600" : "text-emerald-600"
-          }`}
+          className={[
+            "text-xs",
+            iconOnly
+              ? "absolute right-0 top-12 z-20 w-72 rounded-lg border bg-white px-3 py-2 shadow-lg"
+              : "",
+            hasError
+              ? "border-rose-200 text-rose-700"
+              : "border-emerald-200 text-emerald-700",
+          ].join(" ")}
         >
           {message}
         </span>
@@ -116,7 +155,7 @@ export function RefreshDevicesButton({
 
       {lastRefresh && !hasError && !iconOnly ? (
         <span className="text-xs text-slate-500">
-          Última atualização manual às{" "}
+          Última sincronização manual às{" "}
           {lastRefresh.toLocaleTimeString("pt-BR", {
             hour: "2-digit",
             minute: "2-digit",
