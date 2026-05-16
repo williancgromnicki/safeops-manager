@@ -310,20 +310,22 @@ async function fetchOfficialLinuxScript(installer: InstallerRow): Promise<string
   const headers: Record<string, string> = {
     Accept: 'application/json, text/plain, */*',
     'Content-Type': 'application/json',
+    Origin: process.env.TRMM_INSTALLER_ORIGIN?.trim() ?? 'https://safeops.safesys.net.br',
+    Referer: process.env.TRMM_INSTALLER_REFERER?.trim() ?? 'https://safeops.safesys.net.br/',
   };
 
   /*
-   * O HAR capturado mostrou que o endpoint /agents/installer/ respondeu sem
-   * Authorization/Cookie. Mesmo assim, mantemos suporte opcional a token server-side
-   * caso o backend passe a exigir autenticação no futuro.
+   * Importante: o HAR capturado mostrou que o endpoint /agents/installer/
+   * gera o script oficial sem Authorization/Cookie.
+   *
+   * Quando enviamos Authorization: Token <TRMM_API_KEY>, este endpoint tenta
+   * validar esse token como token de sessão/API do próprio backend e pode
+   * responder HTTP 401 com {"detail":"Invalid token."}.
+   *
+   * Por isso NÃO enviamos Authorization nesta chamada. O controle de acesso
+   * permanece no SafeOps antes desta etapa, validando o usuário logado e o
+   * vínculo dele com o cliente do instalador.
    */
-  const apiToken =
-    cleanString(process.env.TRMM_API_KEY) ??
-    cleanString(process.env.SAFEOPS_TRMM_API_KEY);
-
-  if (apiToken) {
-    headers.Authorization = `Token ${apiToken}`;
-  }
 
   const response = await fetch(getInstallerApiUrl(), {
     method: 'POST',
