@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation';
 import { EmptyState } from '@/components/EmptyState';
 import { resolveCurrentCustomer } from '@/lib/data/get-current-customer';
 import { createClient } from '@/lib/supabase/server';
-import { RefreshPageButton } from '@/components/RefreshPageButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -141,6 +140,17 @@ function ExpiryBadge({ expiresAt }: { expiresAt?: string | null }) {
     <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-600/20">
       Disponível
     </span>
+  );
+}
+
+function RefreshLink({ href }: { href: string }) {
+  return (
+    <a
+      href={href}
+      className="inline-flex items-center justify-center rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-800"
+    >
+      Atualizar
+    </a>
   );
 }
 
@@ -285,25 +295,31 @@ export default async function AgentInstallersPage({
   }
 
   const installers = (data ?? []) as unknown as AgentInstallerRow[];
+  const refreshHref = query.customerId
+    ? `/admin/agent-installers?customerId=${encodeURIComponent(
+        query.customerId,
+      )}&refresh=${Date.now()}`
+    : `/admin/agent-installers?refresh=${Date.now()}`;
 
   return (
-    <div className="rounded-2xl border border-surface-border bg-white p-5 shadow-sm">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="section-title">Instaladores de agentes</h2>
-          <p className="mt-2 text-sm leading-relaxed text-slate-600">
-            Baixe os instaladores do agente SafeOps para implantação nos
-            dispositivos do cliente{' '}
-            <span className="font-semibold text-slate-800">
-              {activeCustomer.customerName}
-            </span>
-            .
-          </p>
+    <section className="space-y-6">
+      <div className="rounded-2xl border border-surface-border bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="section-title">Instaladores de agentes</h2>
+            <p className="mt-2 text-sm leading-relaxed text-slate-600">
+              Baixe os instaladores do agente SafeOps para implantação nos
+              dispositivos do cliente{' '}
+              <span className="font-semibold text-slate-800">
+                {activeCustomer.customerName}
+              </span>
+              .
+            </p>
+          </div>
+
+          <RefreshLink href={refreshHref} />
         </div>
-    
-        <RefreshPageButton />
       </div>
-    </div>
 
       {installers.length === 0 ? (
         <EmptyState
