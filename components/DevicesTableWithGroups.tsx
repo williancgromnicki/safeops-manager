@@ -114,7 +114,7 @@ function normalize(value: string): string {
 function calculateMenuPosition(button: HTMLButtonElement): MenuPosition {
   const rect = button.getBoundingClientRect();
   const menuWidth = 224;
-  const menuHeight = 118;
+  const menuHeight = 164;
   const gap = 8;
   const padding = 12;
 
@@ -146,10 +146,12 @@ function calculateMenuPosition(button: HTMLButtonElement): MenuPosition {
 function DeviceRowActions({
   device,
   customerId,
+  sites,
   onMessage,
 }: {
   device: DeviceListItem;
   customerId: string;
+  sites: CustomerSiteListItem[];
   onMessage: (message: { type: 'success' | 'error'; message: string }) => void;
 }) {
   const router = useRouter();
@@ -161,11 +163,35 @@ function DeviceRowActions({
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
+  const [targetSiteId, setTargetSiteId] = useState('');
+  const [isMoving, setIsMoving] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+
+  const movableSites = useMemo(
+    () =>
+      sites
+        .filter(
+          (site) =>
+            site.isActive &&
+            site.tacticalSiteId &&
+            normalize(site.name) !== normalize(device.site),
+        )
+        .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')),
+    [device.site, sites],
+  );
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (!isMoveModalOpen) {
+      return;
+    }
+
+    setTargetSiteId((current) => current || movableSites[0]?.tacticalSiteId || '');
+  }, [isMoveModalOpen, movableSites]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -260,6 +286,63 @@ function DeviceRowActions({
     }
   }
 
+  async function handleMoveDevice(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!targetSiteId) {
+      onMessage({
+        type: 'error',
+        message: 'Selecione o grupo de destino.',
+      });
+      return;
+    }
+
+    try {
+      setIsMoving(true);
+
+      const response = await fetch(
+        `/api/admin/devices/${encodeURIComponent(
+          device.id,
+        )}/move-site?customerId=${encodeURIComponent(customerId)}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          cache: 'no-store',
+          body: JSON.stringify({
+            targetSiteId,
+          }),
+        },
+      );
+
+      const data = await parseApiResponse(response);
+
+      if (!data.ok) {
+        throw new Error(data.error ?? 'Erro ao mover dispositivo.');
+      }
+
+      onMessage({
+        type: 'success',
+        message: data.message ?? 'Dispositivo movido com sucesso.',
+      });
+
+      setIsMoveModalOpen(false);
+      setTargetSiteId('');
+      router.refresh();
+    } catch (error) {
+      onMessage({
+        type: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Erro ao mover dispositivo.',
+      });
+    } finally {
+      setIsMoving(false);
+    }
+  }
+
   const menu =
     isMounted && isOpen && menuPosition
       ? createPortal(
@@ -282,6 +365,20 @@ function DeviceRowActions({
             </div>
 
             <div className="p-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOpen(false);
+                  setIsMoveModalOpen(true);
+                }}
+                disabled={movableSites.length === 0}
+                className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-brand-50 hover:text-brand-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Mover para grupo
+              </button>
+
+              <div className="my-2 border-t border-slate-100" />
+
               <button
                 type="button"
                 onClick={() => {
@@ -315,6 +412,86 @@ function DeviceRowActions({
 
       {menu}
 
+      {isMoveModalOpen ? (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/40 p-4">
+          <form
+            onSubmit={handleMoveDevice}
+            className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl"
+          >
+            <h3 className="text-lg font-semibold text-brand-900">
+              Mover dispositivo
+            </h3>
+
+            <p className="mt-2 text-sm text-slate-600">
+              Escolha o grupo de destino para organizar o dispositivo{' '}
+              <span className="font-semibold text-slate-800">
+                {device.name}
+              </span>
+              .
+            </p>
+
+            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              Grupo atual:{' '}
+              <span className="font-semibold text-slate-800">
+                {device.site}
+              </span>
+            </div>
+
+            <label className="mt-5 block space-y-1">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Grupo de destino
+              </span>
+              <select
+                value={targetSiteId}
+                onChange={(event) => setTargetSiteId(event.target.value)}
+                disabled={isMoving || movableSites.length === 0}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
+                required
+              >
+                {movableSites.length === 0 ? (
+                  <option value="">
+                    Nenhum outro grupo disponível para este cliente
+                  </option>
+                ) : null}
+
+                {movableSites.map((site) => (
+                  <option key={site.id} value={site.tacticalSiteId ?? ''}>
+                    {site.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <p className="mt-3 text-xs leading-relaxed text-slate-500">
+              A movimentação altera o grupo operacional do dispositivo e atualiza
+              a listagem do SafeOps em seguida.
+            </p>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMoveModalOpen(false);
+                  setTargetSiteId('');
+                }}
+                disabled={isMoving}
+                className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="submit"
+                disabled={isMoving || !targetSiteId}
+                className="inline-flex items-center justify-center rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isMoving ? 'Movendo...' : 'Mover dispositivo'}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
       {isConfirmingDelete ? (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/40 p-4">
           <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
@@ -323,9 +500,9 @@ function DeviceRowActions({
             </h3>
 
             <p className="mt-2 text-sm text-slate-600">
-              Esta ação remove o agente do TRMM e limpa o registro local do
-              SafeOps. Use somente quando tiver certeza de que o dispositivo não
-              deve mais ser monitorado.
+              Esta ação remove o agente da origem operacional e limpa o registro
+              local do SafeOps. Use somente quando tiver certeza de que o
+              dispositivo não deve mais ser monitorado.
             </p>
 
             <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
@@ -583,6 +760,7 @@ export function DevicesTableWithGroups({
                 <DeviceRowActions
                   device={device}
                   customerId={customerId}
+                  sites={sites}
                   onMessage={setStatusMessage}
                 />
               </td>
