@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { createClient } from '@/lib/supabase/server';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
-import { createTrmmSite } from '@/lib/trmm/api';
+import { createTrmmSite, findTrmmClientByIdOrName } from '@/lib/trmm/api';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,6 +28,12 @@ type CustomerRow = {
   tactical_client_id: string | null;
 };
 
+type LocalSiteInsertResult = {
+  saved: boolean;
+  siteId: string | null;
+  skippedReason?: string;
+};
+
 const operationalRoles = new Set(['admin', 'client']);
 
 function cleanString(value?: string | null): string | null {
@@ -40,6 +46,10 @@ function normalizeRole(role?: string | null): string {
   return cleanString(role)?.toLowerCase() ?? '';
 }
 
+function normalizeName(value: string): string {
+  return value.trim().toLowerCase();
+}
+
 function slugify(value: string): string {
   return value
     .normalize('NFD')
@@ -48,6 +58,34 @@ function slugify(value: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 80);
+}
+
+function isMissingSitesTableError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const maybeError = error as { code?: string; message?: string; details?: string };
+  const text = [maybeError.code, maybeError.message, maybeError.details]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return (
+    text.includes('public.sites') ||
+    text.includes("table 'sites'") ||
+    text.includes('could not find the table') ||
+    text.includes('schema cache') ||
+    text.includes('pgrst205') ||
+    text.includes('42p01')
+  );
+}
+
+function sanitizePublicErrorMessage(message: string): string {
+  return message
+    .replace(/TRMM/g, 'origem operacional')
+    .replace(/Tactical/g, 'origem operacional')
+    .replace(/tactical/gi, 'operacional');
 }
 
 async function getAuthenticatedUser() {
@@ -123,6 +161,117 @@ async function getCustomer(customerId: string): Promise<CustomerRow | null> {
   return data as CustomerRow | null;
 }
 
+async function getOrCreateOperationalSite(input: {
+  clientId: number;
+  siteName: string;
+}): Promise<{ siteId: number; alreadyExisted: boolean }> {
+  const client = await findTrmmClientByIdOrName({
+    clientId: input.clientId,
+  });
+
+  const existingSite = client?.sites.find(
+    (site) => normalizeName(site.name) === normalizeName(input.siteName),
+  );
+
+  if (existingSite) {
+    return {
+      siteId: existingSite.id,
+      alreadyExisted: true,
+    };
+  }
+
+  const createdSite = await createTrmmSite({
+    clientId: input.clientId,
+    siteName: input.siteName,
+  });
+
+  return {
+    siteId: createdSite.siteId,
+    alreadyExisted: false,
+  };
+}
+
+async function trySaveLocalSite(input: {
+  customerId: string;
+  name: string;
+  slug: string;
+  siteId: number;
+  notes?: string | null;
+}): Promise<LocalSiteInsertResult> {
+  const supabaseAdmin = getSupabaseAdmin();
+
+  const { data, error } = await supabaseAdmin
+    .from('sites')
+    .upsert(
+      {
+        customer_id: input.customerId,
+        name: input.name,
+        slug: input.slug,
+        tactical_site_id: String(input.siteId),
+        notes: cleanString(input.notes),
+        is_active: true,
+      },
+      {
+        onConflict: 'customer_id,tactical_site_id',
+      },
+    )
+    .select('id')
+    .single();
+
+  if (!error) {
+    return {
+      saved: true,
+      siteId: data?.id ?? null,
+    };
+  }
+
+  if (isMissingSitesTableError(error)) {
+    return {
+      saved: false,
+      siteId: null,
+      skippedReason: 'sites_table_missing',
+    };
+  }
+
+  return {
+    saved: false,
+    siteId: null,
+    skippedReason: error.message,
+  };
+}
+
+async function triggerGlobalSync(): Promise<boolean> {
+  const runnerUrl = process.env.SAFEOPS_SYNC_RUNNER_URL;
+  const runnerToken = process.env.SAFEOPS_SYNC_RUNNER_TOKEN;
+
+  if (!runnerUrl || !runnerToken) {
+    return false;
+  }
+
+  const normalizedRunnerUrl = runnerUrl.endsWith('/run')
+    ? runnerUrl
+    : `${runnerUrl.replace(/\/+$/, '')}/run`;
+
+  try {
+    const response = await fetch(normalizedRunnerUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${runnerToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        trigger: 'create-group-ui',
+        scope: 'global',
+      }),
+      cache: 'no-store',
+    });
+
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function POST(
   request: NextRequest,
   context: CustomerSitesRouteContext,
@@ -178,54 +327,70 @@ export async function POST(
     }
 
     const customer = await getCustomer(customerId);
-    const trmmClientId = Number(customer?.tactical_client_id);
+    const operationalClientId = Number(customer?.tactical_client_id);
 
-    if (!customer || !Number.isFinite(trmmClientId)) {
+    if (!customer || !Number.isFinite(operationalClientId)) {
       return NextResponse.json(
         {
           ok: false,
           error:
-            'Este cliente não possui ID do TRMM vinculado. Sincronize ou recadastre o cliente antes de criar grupos.',
+            'Este cliente não possui ID operacional vinculado. Sincronize ou recadastre o cliente antes de criar grupos.',
         },
         { status: 400 },
       );
     }
 
-    const trmmResult = await createTrmmSite({
-      clientId: trmmClientId,
+    const operationalSite = await getOrCreateOperationalSite({
+      clientId: operationalClientId,
       siteName: name,
     });
 
-    const supabaseAdmin = getSupabaseAdmin();
+    const localSave = await trySaveLocalSite({
+      customerId,
+      name,
+      slug,
+      siteId: operationalSite.siteId,
+      notes: payload.notes,
+    });
 
-    const { data, error } = await supabaseAdmin
-      .from('sites')
-      .insert({
-        customer_id: customerId,
-        name,
-        slug,
-        tactical_site_id: String(trmmResult.siteId),
-        notes: cleanString(payload.notes),
-        is_active: true,
-      })
-      .select('id')
-      .single();
+    const syncRequested = await triggerGlobalSync();
 
-    if (error) {
-      throw new Error(`Grupo criado no TRMM, mas falhou ao salvar no SafeOps: ${error.message}`);
+    const warnings: string[] = [];
+
+    if (!localSave.saved && localSave.skippedReason === 'sites_table_missing') {
+      warnings.push(
+        'Tabela local de grupos não existe; o grupo foi criado na origem operacional e será exibido após a sincronização.',
+      );
+    } else if (!localSave.saved && localSave.skippedReason) {
+      warnings.push(
+        `Grupo criado na origem operacional, mas não foi possível salvar o cache local: ${localSave.skippedReason}`,
+      );
+    }
+
+    if (!syncRequested) {
+      warnings.push('Sincronização automática não foi disparada. Use o botão Atualizar para sincronizar a tela.');
     }
 
     return NextResponse.json({
       ok: true,
-      siteId: data.id,
-      message: 'Grupo criado com sucesso.',
+      siteId: localSave.siteId,
+      operationalSiteId: String(operationalSite.siteId),
+      alreadyExisted: operationalSite.alreadyExisted,
+      syncRequested,
+      warnings,
+      message:
+        warnings.length > 0
+          ? 'Grupo criado. Verifique os avisos de sincronização.'
+          : 'Grupo criado com sucesso.',
     });
   } catch (error) {
+    const rawMessage =
+      error instanceof Error ? error.message : 'Erro interno ao criar grupo.';
+
     return NextResponse.json(
       {
         ok: false,
-        error:
-          error instanceof Error ? error.message : 'Erro interno ao criar grupo.',
+        error: sanitizePublicErrorMessage(rawMessage),
       },
       { status: 500 },
     );
