@@ -9,6 +9,12 @@ type SoftwareCatalogItem = {
   attentionNote: string | null;
 };
 
+type CommandResult = {
+  ok: boolean;
+  status: number;
+  output: string;
+};
+
 type SoftwareInstallResponse = {
   ok: boolean;
   status?: 'success' | 'already_installed' | 'failed' | 'unknown';
@@ -19,6 +25,15 @@ type SoftwareInstallResponse = {
     label: string;
     packageName: string;
   };
+  install?: CommandResult;
+  validation?: CommandResult | null;
+  chocolatey?: {
+    ok: boolean;
+    installedNow: boolean;
+    check?: CommandResult;
+    install?: CommandResult;
+    validation?: CommandResult;
+  } | null;
 };
 
 type SoftwareInstallModalProps = {
@@ -28,6 +43,26 @@ type SoftwareInstallModalProps = {
   customerId: string;
   deviceName: string;
 };
+
+function summarizeOutput(output?: string | null): string | null {
+  const value = output?.trim();
+
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value
+    .replace(/\r/g, '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(-8)
+    .join(' ');
+
+  return normalized.length > 260
+    ? `${normalized.slice(0, 260).trim()}...`
+    : normalized;
+}
 
 function getStatusMessage(data: SoftwareInstallResponse): string {
   if (!data.ok && data.error) {
@@ -43,11 +78,37 @@ function getStatusMessage(data: SoftwareInstallResponse): string {
   }
 
   if (data.status === 'failed') {
-    return 'Falha ao instalar o software.';
+    const details =
+      summarizeOutput(data.validation?.output) ??
+      summarizeOutput(data.install?.output) ??
+      summarizeOutput(data.chocolatey?.validation?.output) ??
+      summarizeOutput(data.chocolatey?.install?.output);
+
+    return details
+      ? `Falha ao instalar o software. Detalhes: ${details}`
+      : 'Falha ao instalar o software.';
   }
 
   if (data.status === 'unknown') {
-    return 'A instalação foi executada, mas o resultado não pôde ser confirmado.';
+    const details =
+      summarizeOutput(data.validation?.output) ??
+      summarizeOutput(data.install?.output);
+
+    return details
+      ? `A instalação foi executada, mas o resultado não pôde ser confirmado. Detalhes: ${details}`
+      : 'A instalação foi executada, mas o resultado não pôde ser confirmado.';
+  }
+
+  if (!data.ok) {
+    const details =
+      summarizeOutput(data.validation?.output) ??
+      summarizeOutput(data.install?.output) ??
+      summarizeOutput(data.chocolatey?.validation?.output) ??
+      summarizeOutput(data.chocolatey?.install?.output);
+
+    return details
+      ? `Não foi possível instalar o software. Detalhes: ${details}`
+      : 'Não foi possível instalar o software.';
   }
 
   return 'Operação finalizada.';
@@ -164,12 +225,13 @@ export function SoftwareInstallModal({
       );
 
       const data = (await response.json()) as SoftwareInstallResponse;
+      const resultMessage = getStatusMessage(data);
 
       if (!response.ok || !data.ok) {
-        throw new Error(data.error ?? 'Não foi possível instalar o software.');
+        setMessage(resultMessage);
+        setMessageType(data.status === 'unknown' ? 'warning' : 'error');
+        return;
       }
-
-      const resultMessage = getStatusMessage(data);
 
       setMessage(resultMessage);
       setMessageType(
