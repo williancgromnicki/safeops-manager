@@ -561,6 +561,9 @@ export function DevicesTableWithGroups({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
+  const [isDeleteGroupModalOpen, setIsDeleteGroupModalOpen] = useState(false);
+  const [deleteGroupConfirmation, setDeleteGroupConfirmation] = useState('');
+  const [isDeletingGroup, setIsDeletingGroup] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{
     type: 'success' | 'error';
     message: string;
@@ -593,6 +596,27 @@ export function DevicesTableWithGroups({
       (device) => normalize(device.site) === normalize(selectedGroup),
     );
   }, [devices, selectedGroup]);
+
+  const selectedSite = useMemo(() => {
+    if (selectedGroup === '__all__') {
+      return null;
+    }
+
+    return (
+      sites.find(
+        (site) =>
+          site.isActive &&
+          site.tacticalSiteId &&
+          normalize(site.name) === normalize(selectedGroup),
+      ) ?? null
+    );
+  }, [selectedGroup, sites]);
+
+  const canDeleteSelectedGroup =
+    selectedGroup !== '__all__' && Boolean(selectedSite?.tacticalSiteId);
+
+  const selectedGroupHasDevices =
+    selectedGroup !== '__all__' && filteredDevices.length > 0;
 
   async function handleCreateGroup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -649,6 +673,75 @@ export function DevicesTableWithGroups({
     }
   }
 
+  async function handleDeleteGroup(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!selectedSite?.tacticalSiteId) {
+      setStatusMessage({
+        type: 'error',
+        message:
+          'Selecione um grupo válido para excluir. Atualize a lista de grupos e tente novamente.',
+      });
+      return;
+    }
+
+    if (selectedGroupHasDevices) {
+      setStatusMessage({
+        type: 'error',
+        message:
+          'Este grupo ainda possui dispositivos. Mova os dispositivos para outro grupo antes de excluir.',
+      });
+      return;
+    }
+
+    if (deleteGroupConfirmation !== selectedSite.name) {
+      setStatusMessage({
+        type: 'error',
+        message: 'Para excluir o grupo, digite exatamente o nome do grupo.',
+      });
+      return;
+    }
+
+    try {
+      setIsDeletingGroup(true);
+      setStatusMessage(null);
+
+      const response = await fetch(
+        `/api/admin/customers/${encodeURIComponent(
+          customerId,
+        )}/sites/${encodeURIComponent(selectedSite.tacticalSiteId)}`,
+        {
+          method: 'DELETE',
+          cache: 'no-store',
+        },
+      );
+
+      const data = await parseApiResponse(response);
+
+      if (!data.ok) {
+        throw new Error(data.error ?? 'Erro ao excluir grupo.');
+      }
+
+      setStatusMessage({
+        type: 'success',
+        message: data.message ?? 'Grupo excluído com sucesso.',
+      });
+
+      setSelectedGroup('__all__');
+      setDeleteGroupConfirmation('');
+      setIsDeleteGroupModalOpen(false);
+      router.refresh();
+    } catch (error) {
+      setStatusMessage({
+        type: 'error',
+        message:
+          error instanceof Error ? error.message : 'Erro ao excluir grupo.',
+      });
+    } finally {
+      setIsDeletingGroup(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       {statusMessage ? (
@@ -683,8 +776,27 @@ export function DevicesTableWithGroups({
           </select>
         </label>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <RefreshDevicesButton iconOnly />
+
+          {selectedGroup !== '__all__' ? (
+            <button
+              type="button"
+              onClick={() => {
+                setDeleteGroupConfirmation('');
+                setIsDeleteGroupModalOpen(true);
+              }}
+              disabled={!canDeleteSelectedGroup}
+              title={
+                canDeleteSelectedGroup
+                  ? 'Excluir grupo selecionado'
+                  : 'Grupo sem identificador operacional para exclusão'
+              }
+              className="inline-flex h-10 items-center justify-center rounded-lg border border-rose-200 bg-white px-4 text-sm font-semibold text-rose-700 shadow-sm transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Excluir grupo
+            </button>
+          ) : null}
 
           <button
             type="button"
@@ -768,6 +880,86 @@ export function DevicesTableWithGroups({
           );
         })}
       </DataTable>
+
+      {isDeleteGroupModalOpen && selectedSite ? (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/40 p-4">
+          <form
+            onSubmit={handleDeleteGroup}
+            className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl"
+          >
+            <h3 className="text-lg font-semibold text-rose-700">
+              Excluir grupo
+            </h3>
+
+            <p className="mt-2 text-sm text-slate-600">
+              Esta ação remove o grupo selecionado da origem operacional do
+              cliente. Use somente quando o grupo não tiver mais dispositivos
+              vinculados.
+            </p>
+
+            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              Grupo selecionado:{' '}
+              <span className="font-semibold text-slate-800">
+                {selectedSite.name}
+              </span>
+            </div>
+
+            {selectedGroupHasDevices ? (
+              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                Este grupo ainda possui {filteredDevices.length}{' '}
+                dispositivo(s). Mova todos os dispositivos para outro grupo
+                antes de excluir.
+              </div>
+            ) : (
+              <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+                Para confirmar, digite exatamente:
+                <strong className="ml-1">{selectedSite.name}</strong>
+              </div>
+            )}
+
+            <label className="mt-5 block space-y-1">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Confirmação
+              </span>
+              <input
+                value={deleteGroupConfirmation}
+                onChange={(event) =>
+                  setDeleteGroupConfirmation(event.target.value)
+                }
+                disabled={isDeletingGroup || selectedGroupHasDevices}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
+                placeholder={selectedSite.name}
+              />
+            </label>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsDeleteGroupModalOpen(false);
+                  setDeleteGroupConfirmation('');
+                }}
+                disabled={isDeletingGroup}
+                className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="submit"
+                disabled={
+                  isDeletingGroup ||
+                  selectedGroupHasDevices ||
+                  deleteGroupConfirmation !== selectedSite.name
+                }
+                className="inline-flex items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 shadow-sm transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isDeletingGroup ? 'Excluindo...' : 'Excluir grupo'}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
 
       {isModalOpen ? (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/40 p-4">
