@@ -41,10 +41,6 @@ function normalizeRole(role?: string | null): string {
   return cleanString(role)?.toLowerCase() ?? '';
 }
 
-function normalize(value?: string | null): string {
-  return cleanString(value)?.toLowerCase() ?? '';
-}
-
 function parsePositiveInteger(value: unknown): number | null {
   if (value === null || value === undefined) {
     return null;
