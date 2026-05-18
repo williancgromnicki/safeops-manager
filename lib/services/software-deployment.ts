@@ -18,19 +18,19 @@ type RemoteCommandResult = {
 
 type ChocolateyEnsureResult = {
   ok: boolean;
-  installedNow: boolean;
+  repaired: boolean;
   check: RemoteCommandResult;
-  install?: RemoteCommandResult;
+  repair?: RemoteCommandResult;
   validation?: RemoteCommandResult;
 };
 
 const CHOCOLATEY_EXE = '"%ProgramData%\\chocolatey\\bin\\choco.exe"';
 
 const CHOCOLATEY_CHECK_CMD =
-  'powershell -NoProfile -ExecutionPolicy Bypass -Command "$choco = Get-Command choco.exe -ErrorAction SilentlyContinue; if ($choco) { Write-Output \'CHOCO_READY\'; choco --version } elseif (Test-Path \'$env:ProgramData\\chocolatey\\bin\\choco.exe\') { Write-Output \'CHOCO_READY\'; & \'$env:ProgramData\\chocolatey\\bin\\choco.exe\' --version } else { Write-Output \'CHOCO_NOT_FOUND\' }"';
+  'powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference = \'Continue\'; $paths = @(); if ($env:ChocolateyInstall) { $paths += (Join-Path $env:ChocolateyInstall \'bin\\choco.exe\') }; $paths += (Join-Path $env:ProgramData \'chocolatey\\bin\\choco.exe\'); $cmd = Get-Command choco.exe -ErrorAction SilentlyContinue; if ($cmd) { $paths = @($cmd.Source) + $paths }; $exe = $paths | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1; if (-not $exe) { Write-Output \'CHOCO_NOT_FOUND\'; exit 0 }; Write-Output (\'CHOCO_EXE=\' + $exe); & $exe --version; if ($LASTEXITCODE -eq 0) { Write-Output \'CHOCO_READY\' } else { Write-Output \'CHOCO_BROKEN\'; exit 0 }"';
 
-const CHOCOLATEY_BOOTSTRAP_CMD =
-  'powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference = \'Stop\'; if (-not (Get-Command choco.exe -ErrorAction SilentlyContinue) -and -not (Test-Path \'$env:ProgramData\\chocolatey\\bin\\choco.exe\')) { [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; Set-ExecutionPolicy Bypass -Scope Process -Force; iex ((New-Object System.Net.WebClient).DownloadString(\'https://community.chocolatey.org/install.ps1\')); }; $env:Path = [Environment]::GetEnvironmentVariable(\'Path\', \'Machine\') + \';\' + [Environment]::GetEnvironmentVariable(\'Path\', \'User\'); if (Test-Path \'$env:ProgramData\\chocolatey\\bin\\choco.exe\') { & \'$env:ProgramData\\chocolatey\\bin\\choco.exe\' --version; Write-Output \'CHOCO_READY\' } else { choco --version; Write-Output \'CHOCO_READY\' }"';
+const CHOCOLATEY_REPAIR_CMD =
+  'powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference = \'Stop\'; $chocoRoot = Join-Path $env:ProgramData \'chocolatey\'; if (Test-Path $chocoRoot) { $backup = $chocoRoot + \'.broken-\' + (Get-Date -Format \'yyyyMMddHHmmss\'); Move-Item -Path $chocoRoot -Destination $backup -Force; Write-Output (\'CHOCO_BACKUP=\' + $backup) }; [Environment]::SetEnvironmentVariable(\'ChocolateyInstall\', $null, \'Machine\'); $env:ChocolateyInstall = $null; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; Set-ExecutionPolicy Bypass -Scope Process -Force; iex ((New-Object System.Net.WebClient).DownloadString(\'https://community.chocolatey.org/install.ps1\')); $exe = Join-Path $env:ProgramData \'chocolatey\\bin\\choco.exe\'; if (-not (Test-Path $exe)) { Write-Output \'CHOCO_NOT_FOUND_AFTER_REPAIR\'; exit 1 }; & $exe --version; if ($LASTEXITCODE -eq 0) { Write-Output \'CHOCO_READY\' } else { Write-Output \'CHOCO_NOT_READY_AFTER_REPAIR\'; exit 1 }"';
 
 function getTrmmBaseUrl(): string {
   if (!TRMM_API_URL) {
@@ -153,6 +153,18 @@ function classifyFinalResult(
 function isChocolateyReady(output: string): boolean {
   const normalized = output.toLowerCase();
 
+  if (
+    normalized.includes("choco_not_found") ||
+    normalized.includes("choco_broken") ||
+    normalized.includes("not_found_after_repair") ||
+    normalized.includes("not_ready_after_repair") ||
+    normalized.includes("loaderexceptions") ||
+    normalized.includes("existing chocolatey installation was detected") ||
+    normalized.includes("previous installation of chocolatey")
+  ) {
+    return false;
+  }
+
   return (
     normalized.includes("choco_ready") ||
     normalized.includes("chocolatey v") ||
@@ -206,12 +218,12 @@ async function ensureChocolatey(agentId: string): Promise<ChocolateyEnsureResult
   if (check.ok && isChocolateyReady(check.output)) {
     return {
       ok: true,
-      installedNow: false,
+      repaired: false,
       check,
     };
   }
 
-  const install = await runTrmmCommand(agentId, CHOCOLATEY_BOOTSTRAP_CMD, 900);
+  const repair = await runTrmmCommand(agentId, CHOCOLATEY_REPAIR_CMD, 900);
   const validation = await runTrmmCommand(agentId, CHOCOLATEY_CHECK_CMD, 90);
 
   const ok =
@@ -221,9 +233,9 @@ async function ensureChocolatey(agentId: string): Promise<ChocolateyEnsureResult
 
   return {
     ok,
-    installedNow: ok,
+    repaired: ok,
     check,
-    install,
+    repair,
     validation,
   };
 }
@@ -248,7 +260,7 @@ function buildErrorMessage(input: {
   }
 
   if (input.chocolatey && !input.chocolatey.ok) {
-    return "Não foi possível preparar o Chocolatey no dispositivo antes da instalação.";
+    return "Não foi possível preparar ou reparar o Chocolatey no dispositivo antes da instalação.";
   }
 
   return "A instalação ou validação retornou falha.";
@@ -292,15 +304,23 @@ export async function installSoftwareOnAgent(input: InstallSoftwareInput) {
 
       if (!chocolateyResult.ok) {
         const output = [
+          "=== Chocolatey precheck ===",
           chocolateyResult.check.output,
-          chocolateyResult.install?.output,
-          chocolateyResult.validation?.output,
+          chocolateyResult.repair
+            ? "\n=== Chocolatey repair/bootstrap ===\n" +
+              chocolateyResult.repair.output
+            : "",
+          chocolateyResult.validation
+            ? "\n=== Chocolatey validation ===\n" +
+              chocolateyResult.validation.output
+            : "",
         ]
           .filter(Boolean)
-          .join("\n\n");
+          .join("\n")
+          .trim();
 
         throw new Error(
-          `Não foi possível preparar o Chocolatey no dispositivo. ${output}`.trim()
+          `Não foi possível preparar ou reparar o Chocolatey no dispositivo. ${output}`.trim()
         );
       }
     }
@@ -343,9 +363,9 @@ export async function installSoftwareOnAgent(input: InstallSoftwareInput) {
         ? [
             "=== Chocolatey precheck ===",
             chocolateyResult.check.output,
-            chocolateyResult.install
-              ? "\n=== Chocolatey bootstrap ===\n" +
-                chocolateyResult.install.output
+            chocolateyResult.repair
+              ? "\n=== Chocolatey repair/bootstrap ===\n" +
+                chocolateyResult.repair.output
               : "",
             chocolateyResult.validation
               ? "\n=== Chocolatey validation ===\n" +
@@ -391,9 +411,9 @@ export async function installSoftwareOnAgent(input: InstallSoftwareInput) {
       chocolatey: chocolateyResult
         ? {
             ok: chocolateyResult.ok,
-            installedNow: chocolateyResult.installedNow,
+            repaired: chocolateyResult.repaired,
             check: chocolateyResult.check,
-            install: chocolateyResult.install,
+            repair: chocolateyResult.repair,
             validation: chocolateyResult.validation,
           }
         : null,
