@@ -9,12 +9,6 @@ type SoftwareCatalogItem = {
   attentionNote: string | null;
 };
 
-type CommandResult = {
-  ok: boolean;
-  status: number;
-  output: string;
-};
-
 type SoftwareInstallResponse = {
   ok: boolean;
   status?: 'success' | 'already_installed' | 'failed' | 'unknown';
@@ -25,15 +19,6 @@ type SoftwareInstallResponse = {
     label: string;
     packageName: string;
   };
-  install?: CommandResult;
-  validation?: CommandResult | null;
-  chocolatey?: {
-    ok: boolean;
-    installedNow: boolean;
-    check?: CommandResult;
-    install?: CommandResult;
-    validation?: CommandResult;
-  } | null;
 };
 
 type SoftwareInstallModalProps = {
@@ -44,25 +29,39 @@ type SoftwareInstallModalProps = {
   deviceName: string;
 };
 
-function summarizeOutput(output?: string | null): string | null {
-  const value = output?.trim();
+type ProgressStage = {
+  threshold: number;
+  label: string;
+  description: string;
+};
 
-  if (!value) {
-    return null;
-  }
-
-  const normalized = value
-    .replace(/\r/g, '')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .slice(-8)
-    .join(' ');
-
-  return normalized.length > 260
-    ? `${normalized.slice(0, 260).trim()}...`
-    : normalized;
-}
+const INSTALL_PROGRESS_STAGES: ProgressStage[] = [
+  {
+    threshold: 10,
+    label: 'Iniciando solicitação',
+    description: 'Enviando a tarefa de instalação para o agente SafeOps.',
+  },
+  {
+    threshold: 25,
+    label: 'Validando pré-requisitos',
+    description: 'Verificando Chocolatey e preparando o ambiente do dispositivo.',
+  },
+  {
+    threshold: 45,
+    label: 'Executando instalação',
+    description: 'O pacote está sendo baixado e instalado no dispositivo remoto.',
+  },
+  {
+    threshold: 70,
+    label: 'Aguardando conclusão',
+    description: 'Alguns instaladores podem levar alguns minutos para finalizar.',
+  },
+  {
+    threshold: 90,
+    label: 'Validando resultado',
+    description: 'Conferindo se o software foi instalado corretamente.',
+  },
+];
 
 function getStatusMessage(data: SoftwareInstallResponse): string {
   if (!data.ok && data.error) {
@@ -78,40 +77,34 @@ function getStatusMessage(data: SoftwareInstallResponse): string {
   }
 
   if (data.status === 'failed') {
-    const details =
-      summarizeOutput(data.validation?.output) ??
-      summarizeOutput(data.install?.output) ??
-      summarizeOutput(data.chocolatey?.validation?.output) ??
-      summarizeOutput(data.chocolatey?.install?.output);
-
-    return details
-      ? `Falha ao instalar o software. Detalhes: ${details}`
-      : 'Falha ao instalar o software.';
+    return 'Falha ao instalar o software.';
   }
 
   if (data.status === 'unknown') {
-    const details =
-      summarizeOutput(data.validation?.output) ??
-      summarizeOutput(data.install?.output);
-
-    return details
-      ? `A instalação foi executada, mas o resultado não pôde ser confirmado. Detalhes: ${details}`
-      : 'A instalação foi executada, mas o resultado não pôde ser confirmado.';
-  }
-
-  if (!data.ok) {
-    const details =
-      summarizeOutput(data.validation?.output) ??
-      summarizeOutput(data.install?.output) ??
-      summarizeOutput(data.chocolatey?.validation?.output) ??
-      summarizeOutput(data.chocolatey?.install?.output);
-
-    return details
-      ? `Não foi possível instalar o software. Detalhes: ${details}`
-      : 'Não foi possível instalar o software.';
+    return 'A instalação foi executada, mas o resultado não pôde ser confirmado.';
   }
 
   return 'Operação finalizada.';
+}
+
+function getProgressStage(progress: number): ProgressStage {
+  const current = INSTALL_PROGRESS_STAGES
+    .filter((stage) => progress >= stage.threshold)
+    .at(-1);
+
+  return current ?? INSTALL_PROGRESS_STAGES[0];
+}
+
+function getProgressHint(progress: number): string {
+  if (progress < 35) {
+    return 'Não feche esta janela enquanto a preparação está em andamento.';
+  }
+
+  if (progress < 75) {
+    return 'A instalação está em execução no dispositivo remoto. O tempo varia conforme internet e pacote.';
+  }
+
+  return 'Estamos aguardando o retorno do agente para confirmar o resultado.';
 }
 
 export function SoftwareInstallModal({
@@ -125,6 +118,7 @@ export function SoftwareInstallModal({
   const [selectedSoftware, setSelectedSoftware] = useState('');
   const [isLoadingCatalog, setIsLoadingCatalog] = useState(false);
   const [isInstalling, setIsInstalling] = useState(false);
+  const [installProgress, setInstallProgress] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [messageType, setMessageType] = useState<
     'success' | 'warning' | 'error' | null
@@ -134,6 +128,8 @@ export function SoftwareInstallModal({
     () => softwareList.find((item) => item.key === selectedSoftware) ?? null,
     [softwareList, selectedSoftware],
   );
+
+  const progressStage = getProgressStage(installProgress);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -196,6 +192,42 @@ export function SoftwareInstallModal({
     };
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isInstalling) {
+      return;
+    }
+
+    setInstallProgress(8);
+
+    const interval = window.setInterval(() => {
+      setInstallProgress((current) => {
+        if (current < 30) {
+          return Math.min(current + 4, 30);
+        }
+
+        if (current < 60) {
+          return Math.min(current + 3, 60);
+        }
+
+        if (current < 85) {
+          return Math.min(current + 1, 85);
+        }
+
+        return current;
+      });
+    }, 900);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [isInstalling]);
+
+  function resetInstallState() {
+    setInstallProgress(0);
+    setMessage(null);
+    setMessageType(null);
+  }
+
   async function handleInstall() {
     if (!selectedSoftware) {
       setMessage('Selecione um software para instalar.');
@@ -205,6 +237,7 @@ export function SoftwareInstallModal({
 
     try {
       setIsInstalling(true);
+      setInstallProgress(5);
       setMessage(null);
       setMessageType(null);
 
@@ -225,14 +258,14 @@ export function SoftwareInstallModal({
       );
 
       const data = (await response.json()) as SoftwareInstallResponse;
-      const resultMessage = getStatusMessage(data);
 
       if (!response.ok || !data.ok) {
-        setMessage(resultMessage);
-        setMessageType(data.status === 'unknown' ? 'warning' : 'error');
-        return;
+        throw new Error(data.error ?? 'Não foi possível instalar o software.');
       }
 
+      const resultMessage = getStatusMessage(data);
+
+      setInstallProgress(100);
       setMessage(resultMessage);
       setMessageType(
         data.status === 'already_installed' || data.status === 'unknown'
@@ -240,6 +273,7 @@ export function SoftwareInstallModal({
           : 'success',
       );
     } catch (error) {
+      setInstallProgress(100);
       setMessage(
         error instanceof Error
           ? error.message
@@ -247,7 +281,9 @@ export function SoftwareInstallModal({
       );
       setMessageType('error');
     } finally {
-      setIsInstalling(false);
+      window.setTimeout(() => {
+        setIsInstalling(false);
+      }, 350);
     }
   }
 
@@ -272,7 +308,12 @@ export function SoftwareInstallModal({
 
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => {
+                if (!isInstalling) {
+                  resetInstallState();
+                  onClose();
+                }
+              }}
               disabled={isInstalling}
               className="rounded-lg px-2 py-1 text-sm font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
               aria-label="Fechar modal"
@@ -298,6 +339,7 @@ export function SoftwareInstallModal({
                 setSelectedSoftware(event.target.value);
                 setMessage(null);
                 setMessageType(null);
+                setInstallProgress(0);
               }}
               disabled={isLoadingCatalog || isInstalling}
               className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
@@ -330,6 +372,36 @@ export function SoftwareInstallModal({
             Safesys podem ser enviados por esta tela.
           </div>
 
+          {isInstalling ? (
+            <div className="rounded-xl border border-brand-100 bg-brand-50/60 px-4 py-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold text-brand-900">
+                    {progressStage.label}
+                  </p>
+                  <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                    {progressStage.description}
+                  </p>
+                </div>
+
+                <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-brand-800 ring-1 ring-brand-200">
+                  {installProgress}%
+                </span>
+              </div>
+
+              <div className="mt-4 h-2 overflow-hidden rounded-full bg-white ring-1 ring-brand-100">
+                <div
+                  className="h-full rounded-full bg-brand-700 transition-all duration-500 ease-out"
+                  style={{ width: `${installProgress}%` }}
+                />
+              </div>
+
+              <p className="mt-3 text-xs leading-relaxed text-slate-500">
+                {getProgressHint(installProgress)}
+              </p>
+            </div>
+          ) : null}
+
           {message ? (
             <div
               className={[
@@ -355,7 +427,10 @@ export function SoftwareInstallModal({
         <div className="flex flex-col-reverse gap-2 border-t border-slate-100 bg-slate-50 px-5 py-4 sm:flex-row sm:justify-end">
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => {
+              resetInstallState();
+              onClose();
+            }}
             disabled={isInstalling}
             className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
