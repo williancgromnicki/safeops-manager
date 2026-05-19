@@ -1,11 +1,11 @@
-'use client';
+"use client";
 
-import type { FormEvent, KeyboardEvent } from 'react';
-import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import type { FormEvent, KeyboardEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 type LibraryScript = {
-  source: 'library';
+  source: "library";
   id: number;
   name: string;
   description?: string | null;
@@ -21,15 +21,15 @@ type LibraryScript = {
 };
 
 type LocalScript = {
-  source: 'local';
+  source: "local";
   id: string;
   customer_id: string | null;
-  scope: 'safesys' | 'customer';
+  scope: "safesys" | "customer";
   name: string;
   description: string | null;
-  shell: 'powershell' | 'cmd' | 'bash';
+  shell: "powershell" | "cmd" | "bash";
   script_body: string;
-  status: 'approved' | 'pending_review' | 'disabled';
+  status: "approved" | "pending_review" | "disabled";
   created_by_email: string | null;
   created_at: string;
   updated_at: string | null;
@@ -48,7 +48,7 @@ type ApiResponse = {
   ok: boolean;
   error?: string;
   message?: string;
-  scripts?: Omit<LibraryScript, 'source'>[];
+  scripts?: Omit<LibraryScript, "source">[];
   result?: {
     stdout?: string;
     stderr?: string;
@@ -61,7 +61,7 @@ type LocalScriptsApiResponse = {
   ok: boolean;
   error?: string;
   message?: string;
-  scripts?: Omit<LocalScript, 'source'>[];
+  scripts?: Omit<LocalScript, "source">[];
 };
 
 type DevicesApiResponse = {
@@ -71,7 +71,7 @@ type DevicesApiResponse = {
 };
 
 type StatusMessage = {
-  type: 'success' | 'error';
+  type: "success" | "error";
   message: string;
 } | null;
 
@@ -82,13 +82,13 @@ type RemoteScriptsPanelProps = {
 };
 
 const inputClassName =
-  'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20';
+  "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
 
 const primaryButtonClassName =
-  'inline-flex items-center justify-center rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-60';
+  "inline-flex items-center justify-center rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-60";
 
 const secondaryButtonClassName =
-  'inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60';
+  "inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60";
 
 function FieldLabel({
   label,
@@ -113,9 +113,9 @@ function StatusAlert({ status }: { status: StatusMessage }) {
   }
 
   const className =
-    status.type === 'success'
-      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-      : 'border-rose-200 bg-rose-50 text-rose-800';
+    status.type === "success"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+      : "border-rose-200 bg-rose-50 text-rose-800";
 
   return (
     <div className={`rounded-lg border px-4 py-3 text-sm ${className}`}>
@@ -126,14 +126,14 @@ function StatusAlert({ status }: { status: StatusMessage }) {
 
 function formatPlatforms(platforms?: string[]): string {
   if (!platforms?.length) {
-    return 'All';
+    return "All";
   }
 
-  return platforms.join(', ');
+  return platforms.join(", ");
 }
 
 function cleanShell(shell?: string | null): string {
-  return shell?.trim() || 'powershell';
+  return shell?.trim() || "powershell";
 }
 
 function scriptKey(script: UnifiedScript): string {
@@ -141,23 +141,23 @@ function scriptKey(script: UnifiedScript): string {
 }
 
 function getScriptSourceLabel(script: UnifiedScript): string {
-  if (script.source === 'library') {
-    if (script.script_type === 'builtin') {
-      return 'Nativo';
+  if (script.source === "library") {
+    if (script.script_type === "builtin") {
+      return "Nativo";
     }
 
-    if (script.script_type === 'userdefined') {
-      return 'Personalizado';
+    if (script.script_type === "userdefined") {
+      return "Personalizado";
     }
 
-    return 'Biblioteca';
+    return "Biblioteca";
   }
 
-  return script.scope === 'safesys' ? 'Local Safesys' : 'Local cliente';
+  return script.scope === "safesys" ? "Local Safesys" : "Local cliente";
 }
 
 function getScriptTimeout(script: UnifiedScript): number {
-  if (script.source === 'library') {
+  if (script.source === "library") {
     return script.default_timeout ?? 90;
   }
 
@@ -165,31 +165,31 @@ function getScriptTimeout(script: UnifiedScript): number {
 }
 
 function getScriptCategory(script: UnifiedScript): string {
-  if (script.source === 'library') {
-    return script.category ?? 'Sem categoria';
+  if (script.source === "library") {
+    return script.category ?? "Sem categoria";
   }
 
-  return script.scope === 'safesys' ? 'SafeOps local' : 'Cliente local';
+  return script.scope === "safesys" ? "SafeOps local" : "Cliente local";
 }
 
 function getScriptDescription(script: UnifiedScript): string {
-  return script.description ?? 'Sem descrição.';
+  return script.description ?? "Sem descrição.";
 }
 
 function getScriptPlatforms(script: UnifiedScript): string {
-  if (script.source === 'library') {
+  if (script.source === "library") {
     return formatPlatforms(script.supported_platforms);
   }
 
-  return 'All';
+  return "All";
 }
 
 function canExecuteScript(script: UnifiedScript): boolean {
-  if (script.source === 'library') {
+  if (script.source === "library") {
     return true;
   }
 
-  return script.status === 'approved';
+  return script.status === "approved";
 }
 
 async function parseApiResponse(response: Response): Promise<ApiResponse> {
@@ -198,14 +198,14 @@ async function parseApiResponse(response: Response): Promise<ApiResponse> {
   if (!data) {
     return {
       ok: false,
-      error: 'Resposta inválida da API.',
+      error: "Resposta inválida da API.",
     };
   }
 
   if (!response.ok || !data.ok) {
     return {
       ok: false,
-      error: data.error ?? 'Erro ao executar operação.',
+      error: data.error ?? "Erro ao executar operação.",
     };
   }
 
@@ -215,34 +215,38 @@ async function parseApiResponse(response: Response): Promise<ApiResponse> {
 async function parseLocalScriptsResponse(
   response: Response,
 ): Promise<LocalScriptsApiResponse> {
-  const data = (await response.json().catch(() => null)) as
-    | LocalScriptsApiResponse
-    | null;
+  const data = (await response
+    .json()
+    .catch(() => null)) as LocalScriptsApiResponse | null;
 
   if (!data) {
     return {
       ok: false,
-      error: 'Resposta inválida da API.',
+      error: "Resposta inválida da API.",
     };
   }
 
   if (!response.ok || !data.ok) {
     return {
       ok: false,
-      error: data.error ?? 'Erro ao executar operação.',
+      error: data.error ?? "Erro ao executar operação.",
     };
   }
 
   return data;
 }
 
-async function parseDevicesResponse(response: Response): Promise<DevicesApiResponse> {
-  const data = (await response.json().catch(() => null)) as DevicesApiResponse | null;
+async function parseDevicesResponse(
+  response: Response,
+): Promise<DevicesApiResponse> {
+  const data = (await response
+    .json()
+    .catch(() => null)) as DevicesApiResponse | null;
 
   if (!data) {
     return {
       ok: false,
-      error: 'Resposta inválida da API.',
+      error: "Resposta inválida da API.",
       devices: [],
     };
   }
@@ -250,7 +254,7 @@ async function parseDevicesResponse(response: Response): Promise<DevicesApiRespo
   if (!response.ok || !data.ok) {
     return {
       ok: false,
-      error: data.error ?? 'Erro ao carregar dispositivos.',
+      error: data.error ?? "Erro ao carregar dispositivos.",
       devices: [],
     };
   }
@@ -281,20 +285,27 @@ export function RemoteScriptsPanel({
     retcode?: number;
     execution_time?: number;
   } | null>(null);
+  const [pendingExecution, setPendingExecution] = useState<{
+    script: UnifiedScript;
+    device: Device;
+    timeout: number;
+    runAsUser: boolean;
+  } | null>(null);
 
-  const [scriptSearch, setScriptSearch] = useState('');
-  const [selectedScriptKey, setSelectedScriptKey] = useState('');
-  const [selectedDeviceId, setSelectedDeviceId] = useState('');
+  const [scriptSearch, setScriptSearch] = useState("");
+  const [selectedScriptKey, setSelectedScriptKey] = useState("");
+  const [selectedDeviceId, setSelectedDeviceId] = useState("");
   const [runAsUser, setRunAsUser] = useState(false);
   const [timeout, setTimeoutValue] = useState(90);
 
-  const [scriptName, setScriptName] = useState('');
-  const [scriptDescription, setScriptDescription] = useState('');
-  const [scriptShell, setScriptShell] = useState<LocalScript['shell']>('powershell');
-  const [scriptBody, setScriptBody] = useState('');
+  const [scriptName, setScriptName] = useState("");
+  const [scriptDescription, setScriptDescription] = useState("");
+  const [scriptShell, setScriptShell] =
+    useState<LocalScript["shell"]>("powershell");
+  const [scriptBody, setScriptBody] = useState("");
   const [createAsSafesys, setCreateAsSafesys] = useState(false);
 
-  const isAdmin = role.toLowerCase() === 'admin';
+  const isAdmin = role.toLowerCase() === "admin";
 
   const unifiedScripts = useMemo<UnifiedScript[]>(() => {
     return [...libraryScripts, ...localScripts];
@@ -316,16 +327,20 @@ export function RemoteScriptsPanel({
         cleanShell(script.shell),
         getScriptPlatforms(script),
       ]
-        .join(' ')
+        .join(" ")
         .toLowerCase()
         .includes(query);
     });
 
-    return filtered.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+    return filtered.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
   }, [scriptSearch, unifiedScripts]);
 
   const selectedScript = useMemo(() => {
-    return unifiedScripts.find((script) => scriptKey(script) === selectedScriptKey) ?? null;
+    return (
+      unifiedScripts.find(
+        (script) => scriptKey(script) === selectedScriptKey,
+      ) ?? null
+    );
   }, [selectedScriptKey, unifiedScripts]);
 
   const selectedDevice = useMemo(() => {
@@ -334,12 +349,12 @@ export function RemoteScriptsPanel({
 
   const pendingReviewScripts = useMemo(() => {
     return localScripts
-      .filter((script) => script.status === 'pending_review')
-      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+      .filter((script) => script.status === "pending_review")
+      .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
   }, [localScripts]);
 
   const approvedLocalScriptsCount = useMemo(() => {
-    return localScripts.filter((script) => script.status === 'approved').length;
+    return localScripts.filter((script) => script.status === "approved").length;
   }, [localScripts]);
 
   async function loadLibraryScripts() {
@@ -349,28 +364,30 @@ export function RemoteScriptsPanel({
       const response = await fetch(
         `/api/admin/scripts/trmm?customerId=${encodeURIComponent(customerId)}`,
         {
-          method: 'GET',
-          cache: 'no-store',
+          method: "GET",
+          cache: "no-store",
         },
       );
 
       const data = await parseApiResponse(response);
 
       if (!data.ok) {
-        throw new Error(data.error ?? 'Erro ao carregar biblioteca.');
+        throw new Error(data.error ?? "Erro ao carregar biblioteca.");
       }
 
       const scripts = (data.scripts ?? []).map((script) => ({
         ...script,
-        source: 'library' as const,
+        source: "library" as const,
       }));
 
       setLibraryScripts(scripts);
     } catch (error) {
       setStatus({
-        type: 'error',
+        type: "error",
         message:
-          error instanceof Error ? error.message : 'Erro ao carregar biblioteca.',
+          error instanceof Error
+            ? error.message
+            : "Erro ao carregar biblioteca.",
       });
     } finally {
       setIsLoadingLibrary(false);
@@ -384,30 +401,30 @@ export function RemoteScriptsPanel({
       const response = await fetch(
         `/api/admin/scripts?customerId=${encodeURIComponent(customerId)}`,
         {
-          method: 'GET',
-          cache: 'no-store',
+          method: "GET",
+          cache: "no-store",
         },
       );
 
       const data = await parseLocalScriptsResponse(response);
 
       if (!data.ok) {
-        throw new Error(data.error ?? 'Erro ao carregar scripts locais.');
+        throw new Error(data.error ?? "Erro ao carregar scripts locais.");
       }
 
       const scripts = (data.scripts ?? []).map((script) => ({
         ...script,
-        source: 'local' as const,
+        source: "local" as const,
       }));
 
       setLocalScripts(scripts);
     } catch (error) {
       setStatus({
-        type: 'error',
+        type: "error",
         message:
           error instanceof Error
             ? error.message
-            : 'Erro ao carregar scripts locais.',
+            : "Erro ao carregar scripts locais.",
       });
     } finally {
       setIsLoadingLocalScripts(false);
@@ -421,15 +438,15 @@ export function RemoteScriptsPanel({
       const response = await fetch(
         `/api/admin/devices?customerId=${encodeURIComponent(customerId)}`,
         {
-          method: 'GET',
-          cache: 'no-store',
+          method: "GET",
+          cache: "no-store",
         },
       );
 
       const data = await parseDevicesResponse(response);
 
       if (!data.ok) {
-        throw new Error(data.error ?? 'Erro ao carregar dispositivos.');
+        throw new Error(data.error ?? "Erro ao carregar dispositivos.");
       }
 
       const nextDevices = data.devices ?? [];
@@ -440,11 +457,11 @@ export function RemoteScriptsPanel({
       }
     } catch (error) {
       setStatus({
-        type: 'error',
+        type: "error",
         message:
           error instanceof Error
             ? error.message
-            : 'Erro ao carregar dispositivos.',
+            : "Erro ao carregar dispositivos.",
       });
     } finally {
       setIsLoadingDevices(false);
@@ -461,7 +478,7 @@ export function RemoteScriptsPanel({
   useEffect(() => {
     if (filteredScripts.length === 0) {
       if (selectedScriptKey) {
-        setSelectedScriptKey('');
+        setSelectedScriptKey("");
       }
 
       return;
@@ -480,7 +497,8 @@ export function RemoteScriptsPanel({
     if (selectedScript) {
       setTimeoutValue(getScriptTimeout(selectedScript));
       setRunAsUser(
-        selectedScript.source === 'library' && selectedScript.run_as_user === true,
+        selectedScript.source === "library" &&
+          selectedScript.run_as_user === true,
       );
     }
   }, [selectedScript]);
@@ -493,8 +511,8 @@ export function RemoteScriptsPanel({
 
     if (!name || !body) {
       setStatus({
-        type: 'error',
-        message: 'Informe nome e conteúdo do script.',
+        type: "error",
+        message: "Informe nome e conteúdo do script.",
       });
       return;
     }
@@ -503,46 +521,46 @@ export function RemoteScriptsPanel({
       setIsCreating(true);
       setStatus(null);
 
-      const response = await fetch('/api/admin/scripts', {
-        method: 'POST',
+      const response = await fetch("/api/admin/scripts", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
-        cache: 'no-store',
+        cache: "no-store",
         body: JSON.stringify({
           customerId,
           name,
           description: scriptDescription,
           shell: scriptShell,
           scriptBody: body,
-          scope: createAsSafesys && isAdmin ? 'safesys' : 'customer',
+          scope: createAsSafesys && isAdmin ? "safesys" : "customer",
         }),
       });
 
       const data = await parseLocalScriptsResponse(response);
 
       if (!data.ok) {
-        throw new Error(data.error ?? 'Erro ao cadastrar script.');
+        throw new Error(data.error ?? "Erro ao cadastrar script.");
       }
 
       setStatus({
-        type: 'success',
-        message: data.message ?? 'Script cadastrado com sucesso.',
+        type: "success",
+        message: data.message ?? "Script cadastrado com sucesso.",
       });
 
-      setScriptName('');
-      setScriptDescription('');
-      setScriptShell('powershell');
-      setScriptBody('');
+      setScriptName("");
+      setScriptDescription("");
+      setScriptShell("powershell");
+      setScriptBody("");
       setCreateAsSafesys(false);
 
       await loadLocalScripts();
       router.refresh();
     } catch (error) {
       setStatus({
-        type: 'error',
+        type: "error",
         message:
-          error instanceof Error ? error.message : 'Erro ao cadastrar script.',
+          error instanceof Error ? error.message : "Erro ao cadastrar script.",
       });
     } finally {
       setIsCreating(false);
@@ -550,26 +568,26 @@ export function RemoteScriptsPanel({
   }
 
   async function handleApproveSelectedScript() {
-    if (!selectedScript || selectedScript.source !== 'local') {
+    if (!selectedScript || selectedScript.source !== "local") {
       setStatus({
-        type: 'error',
-        message: 'Selecione um script local pendente para aprovação.',
+        type: "error",
+        message: "Selecione um script local pendente para aprovação.",
       });
       return;
     }
 
-    await handleUpdateLocalScriptStatus(selectedScript.id, 'approved');
+    await handleUpdateLocalScriptStatus(selectedScript.id, "approved");
   }
 
   function handleExecutionFormKeyDown(event: KeyboardEvent<HTMLFormElement>) {
-    if (event.key !== 'Enter') {
+    if (event.key !== "Enter") {
       return;
     }
 
     const target = event.target as HTMLElement | null;
     const tagName = target?.tagName.toLowerCase();
 
-    if (tagName === 'textarea' || tagName === 'button') {
+    if (tagName === "textarea" || tagName === "button") {
       return;
     }
 
@@ -578,12 +596,13 @@ export function RemoteScriptsPanel({
 
   async function handleUpdateLocalScriptStatus(
     scriptId: string,
-    nextStatus: 'approved' | 'pending_review' | 'disabled',
+    nextStatus: "approved" | "pending_review" | "disabled",
   ) {
     if (!isAdmin) {
       setStatus({
-        type: 'error',
-        message: 'Apenas Admin Safesys pode aprovar, reprovar ou desativar scripts.',
+        type: "error",
+        message:
+          "Apenas Admin Safesys pode aprovar, reprovar ou desativar scripts.",
       });
       return;
     }
@@ -595,11 +614,11 @@ export function RemoteScriptsPanel({
       const response = await fetch(
         `/api/admin/scripts/${encodeURIComponent(scriptId)}`,
         {
-          method: 'PATCH',
+          method: "PATCH",
           headers: {
-            'Content-Type': 'application/json',
+            "Content-Type": "application/json",
           },
-          cache: 'no-store',
+          cache: "no-store",
           body: JSON.stringify({
             status: nextStatus,
           }),
@@ -609,23 +628,23 @@ export function RemoteScriptsPanel({
       const data = await parseLocalScriptsResponse(response);
 
       if (!data.ok) {
-        throw new Error(data.error ?? 'Erro ao atualizar status do script.');
+        throw new Error(data.error ?? "Erro ao atualizar status do script.");
       }
 
       setStatus({
-        type: 'success',
-        message: data.message ?? 'Status do script atualizado com sucesso.',
+        type: "success",
+        message: data.message ?? "Status do script atualizado com sucesso.",
       });
 
       await loadLocalScripts();
       router.refresh();
     } catch (error) {
       setStatus({
-        type: 'error',
+        type: "error",
         message:
           error instanceof Error
             ? error.message
-            : 'Erro ao atualizar status do script.',
+            : "Erro ao atualizar status do script.",
       });
     } finally {
       setIsApproving(false);
@@ -637,16 +656,46 @@ export function RemoteScriptsPanel({
 
     if (!selectedScript || !selectedDevice) {
       setStatus({
-        type: 'error',
-        message: 'Selecione um script e um dispositivo.',
+        type: "error",
+        message: "Selecione um script e um dispositivo.",
       });
       return;
     }
 
     if (!canExecuteScript(selectedScript)) {
       setStatus({
-        type: 'error',
-        message: 'Este script ainda não está aprovado para execução.',
+        type: "error",
+        message: "Este script ainda não está aprovado para execução.",
+      });
+      return;
+    }
+
+    setStatus(null);
+    setPendingExecution({
+      script: selectedScript,
+      device: selectedDevice,
+      timeout,
+      runAsUser,
+    });
+  }
+
+  async function executeConfirmedScript() {
+    if (!pendingExecution) {
+      return;
+    }
+
+    const {
+      script,
+      device,
+      timeout: confirmedTimeout,
+      runAsUser: confirmedRunAsUser,
+    } = pendingExecution;
+
+    if (!canExecuteScript(script)) {
+      setPendingExecution(null);
+      setStatus({
+        type: "error",
+        message: "Este script ainda não está aprovado para execução.",
       });
       return;
     }
@@ -656,42 +705,43 @@ export function RemoteScriptsPanel({
       setStatus(null);
       setExecutionResult(null);
 
-      const response = await fetch('/api/admin/scripts/trmm/execute', {
-        method: 'POST',
+      const response = await fetch("/api/admin/scripts/trmm/execute", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
-        cache: 'no-store',
+        cache: "no-store",
         body: JSON.stringify({
           customerId,
-          deviceId: selectedDevice.id,
-          scriptSource: selectedScript.source,
-          scriptId: selectedScript.id,
-          scriptName: selectedScript.name,
-          shell: cleanShell(selectedScript.shell),
-          timeout,
-          runAsUser,
+          deviceId: device.id,
+          scriptSource: script.source,
+          scriptId: script.id,
+          scriptName: script.name,
+          shell: cleanShell(script.shell),
+          timeout: confirmedTimeout,
+          runAsUser: confirmedRunAsUser,
         }),
       });
 
       const data = await parseApiResponse(response);
 
       if (!data.ok) {
-        throw new Error(data.error ?? 'Erro ao executar script.');
+        throw new Error(data.error ?? "Erro ao executar script.");
       }
 
       setExecutionResult(data.result ?? null);
       setStatus({
-        type: data.result?.retcode === 0 ? 'success' : 'error',
-        message: data.message ?? 'Script executado.',
+        type: data.result?.retcode === 0 ? "success" : "error",
+        message: data.message ?? "Script executado.",
       });
 
+      setPendingExecution(null);
       router.refresh();
     } catch (error) {
       setStatus({
-        type: 'error',
+        type: "error",
         message:
-          error instanceof Error ? error.message : 'Erro ao executar script.',
+          error instanceof Error ? error.message : "Erro ao executar script.",
       });
     } finally {
       setIsExecuting(false);
@@ -707,9 +757,12 @@ export function RemoteScriptsPanel({
           <div>
             <h2 className="section-title">Scripts remotos</h2>
             <p className="mt-2 text-sm text-slate-600">
-              Execute scripts da biblioteca e scripts locais em dispositivos do cliente{' '}
-              <span className="font-semibold text-slate-800">{customerName}</span>.
-              Nesta etapa, a execução é liberada em um dispositivo por vez.
+              Execute scripts da biblioteca e scripts locais em dispositivos do
+              cliente{" "}
+              <span className="font-semibold text-slate-800">
+                {customerName}
+              </span>
+              . Nesta etapa, a execução é liberada em um dispositivo por vez.
             </p>
           </div>
 
@@ -727,7 +780,8 @@ export function RemoteScriptsPanel({
               </p>
               <p className="mt-1 text-2xl font-bold">{localScripts.length}</p>
               <p className="mt-1 text-xs text-slate-500">
-                {approvedLocalScriptsCount} aprovados • {pendingReviewScripts.length} pendentes
+                {approvedLocalScriptsCount} aprovados •{" "}
+                {pendingReviewScripts.length} pendentes
               </p>
             </div>
 
@@ -747,7 +801,8 @@ export function RemoteScriptsPanel({
             <div>
               <h3 className="section-title">Aprovação de scripts locais</h3>
               <p className="mt-1 text-sm text-slate-600">
-                Scripts cadastrados por clientes ficam pendentes até revisão e aprovação da Safesys.
+                Scripts cadastrados por clientes ficam pendentes até revisão e
+                aprovação da Safesys.
               </p>
             </div>
 
@@ -769,19 +824,22 @@ export function RemoteScriptsPanel({
                 >
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div>
-                      <p className="font-semibold text-brand-900">{script.name}</p>
+                      <p className="font-semibold text-brand-900">
+                        {script.name}
+                      </p>
                       <p className="mt-1 text-sm text-slate-700">
-                        {script.description ?? 'Sem descrição.'}
+                        {script.description ?? "Sem descrição."}
                       </p>
                       <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
                         <span className="rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200">
                           Shell: {cleanShell(script.shell)}
                         </span>
                         <span className="rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200">
-                          Escopo: {script.scope === 'safesys' ? 'Safesys' : 'Cliente'}
+                          Escopo:{" "}
+                          {script.scope === "safesys" ? "Safesys" : "Cliente"}
                         </span>
                         <span className="rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200">
-                          Autor: {script.created_by_email ?? 'Não informado'}
+                          Autor: {script.created_by_email ?? "Não informado"}
                         </span>
                       </div>
                     </div>
@@ -789,7 +847,9 @@ export function RemoteScriptsPanel({
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        onClick={() => handleUpdateLocalScriptStatus(script.id, 'approved')}
+                        onClick={() =>
+                          handleUpdateLocalScriptStatus(script.id, "approved")
+                        }
                         disabled={isApproving}
                         className="inline-flex items-center justify-center rounded-lg bg-brand-700 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-60"
                       >
@@ -798,7 +858,9 @@ export function RemoteScriptsPanel({
 
                       <button
                         type="button"
-                        onClick={() => handleUpdateLocalScriptStatus(script.id, 'disabled')}
+                        onClick={() =>
+                          handleUpdateLocalScriptStatus(script.id, "disabled")
+                        }
                         disabled={isApproving}
                         className="inline-flex items-center justify-center rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 shadow-sm transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
                       >
@@ -822,7 +884,8 @@ export function RemoteScriptsPanel({
           <div>
             <h3 className="section-title">Executar script</h3>
             <p className="mt-1 text-sm text-slate-600">
-              Selecione um script da biblioteca ou um script local aprovado e execute em um agente.
+              Selecione um script da biblioteca ou um script local aprovado e
+              execute em um agente.
             </p>
           </div>
 
@@ -889,7 +952,9 @@ export function RemoteScriptsPanel({
                 max={3600}
                 className={inputClassName}
                 value={timeout}
-                onChange={(event) => setTimeoutValue(Number(event.target.value))}
+                onChange={(event) =>
+                  setTimeoutValue(Number(event.target.value))
+                }
                 required
               />
             </FieldLabel>
@@ -897,8 +962,10 @@ export function RemoteScriptsPanel({
             <FieldLabel label="Executar como">
               <select
                 className={inputClassName}
-                value={runAsUser ? 'user' : 'system'}
-                onChange={(event) => setRunAsUser(event.target.value === 'user')}
+                value={runAsUser ? "user" : "system"}
+                onChange={(event) =>
+                  setRunAsUser(event.target.value === "user")
+                }
               >
                 <option value="system">SYSTEM</option>
                 <option value="user">Usuário logado</option>
@@ -911,7 +978,9 @@ export function RemoteScriptsPanel({
           <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <p className="font-semibold text-brand-900">{selectedScript.name}</p>
+                <p className="font-semibold text-brand-900">
+                  {selectedScript.name}
+                </p>
                 <p className="mt-1">{getScriptDescription(selectedScript)}</p>
               </div>
 
@@ -922,30 +991,35 @@ export function RemoteScriptsPanel({
 
             <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-6">
               <p>
-                <span className="font-semibold text-slate-800">ID:</span>{' '}
+                <span className="font-semibold text-slate-800">ID:</span>{" "}
                 {selectedScript.id}
               </p>
               <p>
-                <span className="font-semibold text-slate-800">Shell:</span>{' '}
+                <span className="font-semibold text-slate-800">Shell:</span>{" "}
                 {cleanShell(selectedScript.shell)}
               </p>
               <p>
-                <span className="font-semibold text-slate-800">Plataformas:</span>{' '}
+                <span className="font-semibold text-slate-800">
+                  Plataformas:
+                </span>{" "}
                 {getScriptPlatforms(selectedScript)}
               </p>
               <p>
-                <span className="font-semibold text-slate-800">Categoria:</span>{' '}
+                <span className="font-semibold text-slate-800">Categoria:</span>{" "}
                 {getScriptCategory(selectedScript)}
               </p>
               <p>
-                <span className="font-semibold text-slate-800">Timeout:</span>{' '}
+                <span className="font-semibold text-slate-800">Timeout:</span>{" "}
                 {getScriptTimeout(selectedScript)}s
               </p>
               <p>
-                <span className="font-semibold text-slate-800">Default args:</span>{' '}
-                {selectedScript.source === 'library' && selectedScript.args?.length
+                <span className="font-semibold text-slate-800">
+                  Default args:
+                </span>{" "}
+                {selectedScript.source === "library" &&
+                selectedScript.args?.length
                   ? JSON.stringify(selectedScript.args)
-                  : '—'}
+                  : "—"}
               </p>
             </div>
 
@@ -953,17 +1027,20 @@ export function RemoteScriptsPanel({
               <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <p>
-                    Este script local ainda está pendente de revisão e não pode ser executado até ser aprovado.
+                    Este script local ainda está pendente de revisão e não pode
+                    ser executado até ser aprovado.
                   </p>
 
-                  {isAdmin && selectedScript.source === 'local' ? (
+                  {isAdmin && selectedScript.source === "local" ? (
                     <button
                       type="button"
                       onClick={handleApproveSelectedScript}
                       disabled={isApproving}
                       className="inline-flex w-fit items-center justify-center rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-800 shadow-sm transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      {isApproving ? 'Aprovando...' : 'Clique aqui para aprovar o script'}
+                      {isApproving
+                        ? "Aprovando..."
+                        : "Clique aqui para aprovar o script"}
                     </button>
                   ) : null}
                 </div>
@@ -987,10 +1064,99 @@ export function RemoteScriptsPanel({
               (selectedScript ? !canExecuteScript(selectedScript) : true)
             }
           >
-            {isExecuting ? 'Executando...' : 'Executar script'}
+            {isExecuting ? "Executando..." : "Revisar execução"}
           </button>
         </div>
       </form>
+
+      {pendingExecution ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+          <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-brand-900">
+                  Confirmar execução do script
+                </h3>
+                <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                  Revise os detalhes antes de enviar o comando para o
+                  dispositivo. Esta ação executa o script imediatamente no
+                  agente selecionado.
+                </p>
+              </div>
+
+              <span className="inline-flex w-fit items-center rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800 ring-1 ring-amber-200">
+                Confirmação necessária
+              </span>
+            </div>
+
+            <div className="mt-5 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Script
+                </p>
+                <p className="mt-1 font-semibold text-slate-900">
+                  {pendingExecution.script.name}
+                </p>
+                <p className="mt-1 text-slate-600">
+                  {getScriptDescription(pendingExecution.script)}
+                </p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Dispositivo
+                  </p>
+                  <p className="mt-1 font-medium text-slate-900">
+                    {pendingExecution.device.name}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {pendingExecution.device.site}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Execução
+                  </p>
+                  <p className="mt-1 font-medium text-slate-900">
+                    {pendingExecution.runAsUser ? "Usuário logado" : "SYSTEM"}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    Timeout: {pendingExecution.timeout}s • Shell:{" "}
+                    {cleanShell(pendingExecution.script.shell)}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              Execute somente scripts revisados e compatíveis com o dispositivo
+              selecionado. A ação será registrada no histórico operacional.
+            </div>
+
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setPendingExecution(null)}
+                disabled={isExecuting}
+                className={secondaryButtonClassName}
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                onClick={executeConfirmedScript}
+                disabled={isExecuting}
+                className={primaryButtonClassName}
+              >
+                {isExecuting ? "Executando..." : "Confirmar e executar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {executionResult ? (
         <div className="rounded-2xl border border-surface-border bg-white p-5 shadow-sm">
@@ -1002,7 +1168,7 @@ export function RemoteScriptsPanel({
                 Retcode
               </p>
               <p className="mt-1 text-xl font-bold text-slate-900">
-                {executionResult.retcode ?? '—'}
+                {executionResult.retcode ?? "—"}
               </p>
             </div>
 
@@ -1011,7 +1177,7 @@ export function RemoteScriptsPanel({
                 Tempo
               </p>
               <p className="mt-1 text-xl font-bold text-slate-900">
-                {executionResult.execution_time ?? '—'}s
+                {executionResult.execution_time ?? "—"}s
               </p>
             </div>
 
@@ -1020,7 +1186,7 @@ export function RemoteScriptsPanel({
                 Status
               </p>
               <p className="mt-1 text-xl font-bold text-slate-900">
-                {executionResult.retcode === 0 ? 'Sucesso' : 'Falha'}
+                {executionResult.retcode === 0 ? "Sucesso" : "Falha"}
               </p>
             </div>
           </div>
@@ -1031,7 +1197,7 @@ export function RemoteScriptsPanel({
                 STDOUT
               </p>
               <pre className="mt-2 max-h-96 overflow-auto rounded-xl bg-slate-950 p-4 text-xs text-slate-100">
-                {executionResult.stdout || 'Sem saída.'}
+                {executionResult.stdout || "Sem saída."}
               </pre>
             </div>
 
@@ -1040,7 +1206,7 @@ export function RemoteScriptsPanel({
                 STDERR
               </p>
               <pre className="mt-2 max-h-96 overflow-auto rounded-xl bg-slate-950 p-4 text-xs text-rose-100">
-                {executionResult.stderr || 'Sem erros.'}
+                {executionResult.stderr || "Sem erros."}
               </pre>
             </div>
           </div>
@@ -1054,7 +1220,8 @@ export function RemoteScriptsPanel({
         <h3 className="section-title">Cadastrar script local</h3>
 
         <p className="mt-2 text-sm text-slate-600">
-          Scripts locais ficam registrados no SafeOps para revisão e também aparecem no mesmo campo de busca dos scripts.
+          Scripts locais ficam registrados no SafeOps para revisão e também
+          aparecem no mesmo campo de busca dos scripts.
         </p>
 
         <div className="mt-5 space-y-4">
@@ -1083,7 +1250,7 @@ export function RemoteScriptsPanel({
               className={inputClassName}
               value={scriptShell}
               onChange={(event) =>
-                setScriptShell(event.target.value as LocalScript['shell'])
+                setScriptShell(event.target.value as LocalScript["shell"])
               }
             >
               <option value="powershell">PowerShell</option>
@@ -1120,7 +1287,7 @@ export function RemoteScriptsPanel({
             className={secondaryButtonClassName}
             disabled={isCreating}
           >
-            {isCreating ? 'Salvando...' : 'Salvar script local'}
+            {isCreating ? "Salvando..." : "Salvar script local"}
           </button>
         </div>
       </form>
