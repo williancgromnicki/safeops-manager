@@ -558,54 +558,7 @@ export function RemoteScriptsPanel({
       return;
     }
 
-    if (!isAdmin) {
-      setStatus({
-        type: 'error',
-        message: 'Apenas Admin Safesys pode aprovar scripts.',
-      });
-      return;
-    }
-
-    try {
-      setIsApproving(true);
-      setStatus(null);
-
-      const response = await fetch(
-        `/api/admin/scripts/${encodeURIComponent(selectedScript.id)}`,
-        {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          cache: 'no-store',
-          body: JSON.stringify({
-            status: 'approved',
-          }),
-        },
-      );
-
-      const data = await parseLocalScriptsResponse(response);
-
-      if (!data.ok) {
-        throw new Error(data.error ?? 'Erro ao aprovar script.');
-      }
-
-      setStatus({
-        type: 'success',
-        message: data.message ?? 'Script aprovado com sucesso.',
-      });
-
-      await loadLocalScripts();
-      router.refresh();
-    } catch (error) {
-      setStatus({
-        type: 'error',
-        message:
-          error instanceof Error ? error.message : 'Erro ao aprovar script.',
-      });
-    } finally {
-      setIsApproving(false);
-    }
+    await handleUpdateLocalScriptStatus(selectedScript.id, 'approved');
   }
 
   function handleExecutionFormKeyDown(event: KeyboardEvent<HTMLFormElement>) {
@@ -678,6 +631,7 @@ export function RemoteScriptsPanel({
       setIsApproving(false);
     }
   }
+
   async function handleExecuteScript(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -773,7 +727,7 @@ export function RemoteScriptsPanel({
               </p>
               <p className="mt-1 text-2xl font-bold">{localScripts.length}</p>
               <p className="mt-1 text-xs text-slate-500">
-                {approvedLocalScriptsCount} aprovados â€¢ {pendingReviewScripts.length} pendentes
+                {approvedLocalScriptsCount} aprovados • {pendingReviewScripts.length} pendentes
               </p>
             </div>
 
@@ -791,9 +745,9 @@ export function RemoteScriptsPanel({
         <div className="rounded-2xl border border-surface-border bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <h3 className="section-title">AprovaÃ§Ã£o de scripts locais</h3>
+              <h3 className="section-title">Aprovação de scripts locais</h3>
               <p className="mt-1 text-sm text-slate-600">
-                Scripts cadastrados por clientes ficam pendentes atÃ© revisÃ£o e aprovaÃ§Ã£o da Safesys.
+                Scripts cadastrados por clientes ficam pendentes até revisão e aprovação da Safesys.
               </p>
             </div>
 
@@ -804,7 +758,7 @@ export function RemoteScriptsPanel({
 
           {pendingReviewScripts.length === 0 ? (
             <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-              Nenhum script local pendente de aprovaÃ§Ã£o no momento.
+              Nenhum script local pendente de aprovação no momento.
             </div>
           ) : (
             <div className="mt-4 space-y-3">
@@ -817,7 +771,7 @@ export function RemoteScriptsPanel({
                     <div>
                       <p className="font-semibold text-brand-900">{script.name}</p>
                       <p className="mt-1 text-sm text-slate-700">
-                        {script.description ?? 'Sem descriÃ§Ã£o.'}
+                        {script.description ?? 'Sem descrição.'}
                       </p>
                       <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
                         <span className="rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200">
@@ -827,7 +781,7 @@ export function RemoteScriptsPanel({
                           Escopo: {script.scope === 'safesys' ? 'Safesys' : 'Cliente'}
                         </span>
                         <span className="rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200">
-                          Autor: {script.created_by_email ?? 'NÃ£o informado'}
+                          Autor: {script.created_by_email ?? 'Não informado'}
                         </span>
                       </div>
                     </div>
