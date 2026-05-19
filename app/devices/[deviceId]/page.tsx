@@ -183,7 +183,7 @@ export default async function DeviceDetailPage({
         <StatCard
           label="Último check-in"
           value={device.lastSeen}
-          helper={<span className="text-xs text-slate-500">TRMM</span>}
+          helper={<span className="text-xs text-slate-500">Operacional</span>}
         />
 
         <StatCard

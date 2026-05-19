@@ -155,7 +155,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Usuário comum vê scripts locais do cliente.
-    // A biblioteca compartilhada vem do TRMM em /api/admin/scripts/trmm.
+    // A biblioteca compartilhada vem da origem operacional.
     // A execução de script local de outro usuário fica bloqueada no endpoint de execução.
     const { data, error } = await supabaseAdmin
       .from('remote_scripts')

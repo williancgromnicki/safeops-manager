@@ -330,7 +330,7 @@ export async function DELETE(
         {
           ok: false,
           error:
-            'Este cliente possui agentes ativos no TRMM. Remova primeiro os agentes/dispositivos vinculados a este cliente pela tela de Dispositivos e depois tente remover o cliente novamente.',
+            'Este cliente possui agentes ativos na origem operacional. Remova primeiro os agentes/dispositivos vinculados a este cliente pela tela de Dispositivos e depois tente remover o cliente novamente.',
         },
         { status: 400 },
       );

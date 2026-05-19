@@ -1,4 +1,4 @@
-# Tactical Integration (Internal Server-Side Placeholder)
+# SafeOps Operational Integration (Internal Server-Side Placeholder)
 
 Esta pasta reserva a estrutura para uma integração **interna futura**, exclusivamente no backend.
 

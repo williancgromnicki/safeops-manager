@@ -43,7 +43,7 @@ function getTrmmApiUrl(): string {
   const apiUrl = process.env.TRMM_API_URL?.trim();
 
   if (!apiUrl) {
-    throw new Error('TRMM_API_URL não configurada.');
+    throw new Error('URL da origem operacional não configurada.');
   }
 
   return apiUrl.replace(/\/+$/, '');
@@ -53,7 +53,7 @@ function getTrmmApiKey(): string {
   const apiKey = process.env.TRMM_API_KEY?.trim();
 
   if (!apiKey) {
-    throw new Error('TRMM_API_KEY não configurada.');
+    throw new Error('Chave da origem operacional não configurada.');
   }
 
   return apiKey;
@@ -160,7 +160,7 @@ async function getMeshCentralControlUrl(tacticalAgentId: string) {
     const message =
       data?.detail ||
       data?.error ||
-      `TRMM retornou erro ${response.status} ao gerar sessão MeshCentral.`;
+      `A origem operacional retornou erro ${response.status} ao gerar sessão MeshCentral.`;
 
     throw new Error(message);
   }
@@ -169,7 +169,7 @@ async function getMeshCentralControlUrl(tacticalAgentId: string) {
 
   if (!controlUrl) {
     throw new Error(
-      'TRMM não retornou URL de controle remoto para este dispositivo.',
+      'A origem operacional não retornou URL de controle remoto para este dispositivo.',
     );
   }
 
@@ -331,7 +331,7 @@ export async function POST(request: NextRequest, context: RemoteRouteContext) {
       return NextResponse.json(
         {
           ok: false,
-          error: 'Dispositivo sem tactical_agent_id para Take Control.',
+          error: 'Dispositivo sem identificador operacional para acesso remoto.',
         },
         { status: 409 },
       );

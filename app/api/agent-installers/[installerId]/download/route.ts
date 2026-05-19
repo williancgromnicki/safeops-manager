@@ -92,7 +92,7 @@ function getInstallerApiUrl(): string {
    * No HAR oficial ele aparece em:
    *   https://api.safesys.net.br/agents/installer/
    *
-   * Como TRMM_API_URL normalmente pode apontar para a API versionada,
+   * Como a URL operacional normalmente pode apontar para a API versionada,
    * normalizamos/removemos /api/v3 antes de montar a URL do instalador.
    */
   return `${getApiBaseUrl()}/agents/installer/`;
@@ -333,7 +333,7 @@ async function fetchOfficialLinuxScript(installer: InstallerRow): Promise<string
 
   if (!apiKey) {
     throw new Error(
-      'TRMM_API_KEY não configurada no ambiente. Configure a chave para permitir a geração server-side do instalador Linux.',
+      'Chave da origem operacional não configurada no ambiente. Configure a chave para permitir a geração server-side do instalador Linux.',
     );
   }
 
@@ -353,7 +353,7 @@ async function fetchOfficialLinuxScript(installer: InstallerRow): Promise<string
 
   /*
    * Importante:
-   * - NÃO usamos Authorization: Token <TRMM_API_KEY>. Teste anterior retornou
+   * - NÃO usamos Authorization: Token <chave operacional>. Teste anterior retornou
    *   {"detail":"Invalid token."}.
    * - Também não podemos chamar sem credencial a partir do backend do SafeOps,
    *   pois a API responde {"detail":"Authentication credentials were not provided."}.

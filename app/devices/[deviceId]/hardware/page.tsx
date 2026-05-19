@@ -56,7 +56,7 @@ const labelMap: Record<string, string> = {
   modelo: 'Modelo',
   serial_number: 'Número de série',
   serial: 'Número de série',
-  tactical_agent_id: 'ID do agente Tactical',
+  tactical_agent_id: 'ID operacional do agente',
   last_seen_at: 'Último check-in',
   ultimo_check_in: 'Último check-in',
   last_inventory_at: 'Último inventário',
