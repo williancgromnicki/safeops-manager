@@ -1,6 +1,6 @@
 'use client';
 
-import type { FormEvent } from 'react';
+import type { FormEvent, KeyboardEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
@@ -608,6 +608,76 @@ export function RemoteScriptsPanel({
     }
   }
 
+  function handleExecutionFormKeyDown(event: KeyboardEvent<HTMLFormElement>) {
+    if (event.key !== 'Enter') {
+      return;
+    }
+
+    const target = event.target as HTMLElement | null;
+    const tagName = target?.tagName.toLowerCase();
+
+    if (tagName === 'textarea' || tagName === 'button') {
+      return;
+    }
+
+    event.preventDefault();
+  }
+
+  async function handleUpdateLocalScriptStatus(
+    scriptId: string,
+    nextStatus: 'approved' | 'pending_review' | 'disabled',
+  ) {
+    if (!isAdmin) {
+      setStatus({
+        type: 'error',
+        message: 'Apenas Admin Safesys pode aprovar, reprovar ou desativar scripts.',
+      });
+      return;
+    }
+
+    try {
+      setIsApproving(true);
+      setStatus(null);
+
+      const response = await fetch(
+        `/api/admin/scripts/${encodeURIComponent(scriptId)}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          cache: 'no-store',
+          body: JSON.stringify({
+            status: nextStatus,
+          }),
+        },
+      );
+
+      const data = await parseLocalScriptsResponse(response);
+
+      if (!data.ok) {
+        throw new Error(data.error ?? 'Erro ao atualizar status do script.');
+      }
+
+      setStatus({
+        type: 'success',
+        message: data.message ?? 'Status do script atualizado com sucesso.',
+      });
+
+      await loadLocalScripts();
+      router.refresh();
+    } catch (error) {
+      setStatus({
+        type: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Erro ao atualizar status do script.',
+      });
+    } finally {
+      setIsApproving(false);
+    }
+  }
   async function handleExecuteScript(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -791,6 +861,7 @@ export function RemoteScriptsPanel({
 
       <form
         onSubmit={handleExecuteScript}
+        onKeyDown={handleExecutionFormKeyDown}
         className="rounded-2xl border border-surface-border bg-white p-5 shadow-sm"
       >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
