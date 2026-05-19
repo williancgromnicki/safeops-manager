@@ -332,6 +332,16 @@ export function RemoteScriptsPanel({
     return devices.find((device) => device.id === selectedDeviceId) ?? null;
   }, [devices, selectedDeviceId]);
 
+  const pendingReviewScripts = useMemo(() => {
+    return localScripts
+      .filter((script) => script.status === 'pending_review')
+      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  }, [localScripts]);
+
+  const approvedLocalScriptsCount = useMemo(() => {
+    return localScripts.filter((script) => script.status === 'approved').length;
+  }, [localScripts]);
+
   async function loadLibraryScripts() {
     try {
       setIsLoadingLibrary(true);
@@ -449,7 +459,19 @@ export function RemoteScriptsPanel({
   }, [customerId]);
 
   useEffect(() => {
-    if (!selectedScriptKey && filteredScripts.length > 0) {
+    if (filteredScripts.length === 0) {
+      if (selectedScriptKey) {
+        setSelectedScriptKey('');
+      }
+
+      return;
+    }
+
+    const currentSelectionIsVisible = filteredScripts.some(
+      (script) => scriptKey(script) === selectedScriptKey,
+    );
+
+    if (!selectedScriptKey || !currentSelectionIsVisible) {
       setSelectedScriptKey(scriptKey(filteredScripts[0]));
     }
   }, [filteredScripts, selectedScriptKey]);
@@ -680,6 +702,9 @@ export function RemoteScriptsPanel({
                 Locais
               </p>
               <p className="mt-1 text-2xl font-bold">{localScripts.length}</p>
+              <p className="mt-1 text-xs text-slate-500">
+                {approvedLocalScriptsCount} aprovados â€¢ {pendingReviewScripts.length} pendentes
+              </p>
             </div>
 
             <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-emerald-900">
@@ -691,6 +716,78 @@ export function RemoteScriptsPanel({
           </div>
         </div>
       </div>
+
+      {isAdmin ? (
+        <div className="rounded-2xl border border-surface-border bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h3 className="section-title">AprovaÃ§Ã£o de scripts locais</h3>
+              <p className="mt-1 text-sm text-slate-600">
+                Scripts cadastrados por clientes ficam pendentes atÃ© revisÃ£o e aprovaÃ§Ã£o da Safesys.
+              </p>
+            </div>
+
+            <span className="inline-flex w-fit items-center rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800 ring-1 ring-amber-200">
+              {pendingReviewScripts.length} pendente(s)
+            </span>
+          </div>
+
+          {pendingReviewScripts.length === 0 ? (
+            <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+              Nenhum script local pendente de aprovaÃ§Ã£o no momento.
+            </div>
+          ) : (
+            <div className="mt-4 space-y-3">
+              {pendingReviewScripts.map((script) => (
+                <div
+                  key={script.id}
+                  className="rounded-xl border border-amber-200 bg-amber-50/60 p-4"
+                >
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <p className="font-semibold text-brand-900">{script.name}</p>
+                      <p className="mt-1 text-sm text-slate-700">
+                        {script.description ?? 'Sem descriÃ§Ã£o.'}
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
+                        <span className="rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200">
+                          Shell: {cleanShell(script.shell)}
+                        </span>
+                        <span className="rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200">
+                          Escopo: {script.scope === 'safesys' ? 'Safesys' : 'Cliente'}
+                        </span>
+                        <span className="rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200">
+                          Autor: {script.created_by_email ?? 'NÃ£o informado'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateLocalScriptStatus(script.id, 'approved')}
+                        disabled={isApproving}
+                        className="inline-flex items-center justify-center rounded-lg bg-brand-700 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Aprovar
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateLocalScriptStatus(script.id, 'disabled')}
+                        disabled={isApproving}
+                        className="inline-flex items-center justify-center rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 shadow-sm transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Reprovar/desativar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : null}
 
       <form
         onSubmit={handleExecuteScript}
