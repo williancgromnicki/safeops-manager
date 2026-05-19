@@ -41,6 +41,15 @@ function normalizeRole(role?: string | null): string {
   return cleanString(role)?.toLowerCase() ?? '';
 }
 
+function sanitizePublicErrorMessage(message: string): string {
+  return message
+    .replace(/TRMM API/gi, 'API operacional')
+    .replace(/TRMM/gi, 'origem operacional')
+    .replace(/TacticalRMM/gi, 'origem operacional')
+    .replace(/Tactical/gi, 'origem operacional')
+    .replace(/tactical/gi, 'operacional');
+}
+
 async function getAuthenticatedUser() {
   const supabase = await createClient();
 
@@ -215,14 +224,16 @@ export async function DELETE(
     return NextResponse.json({
       ok: true,
       message:
-        'Agente removido com sucesso. Use o botão de atualização para sincronizar o SafeOps com o TRMM.',
+        'Agente removido com sucesso. Use o botão Atualizar para sincronizar o SafeOps.',
     });
   } catch (error) {
+    const rawMessage =
+      error instanceof Error ? error.message : 'Erro interno ao remover agente.';
+
     return NextResponse.json(
       {
         ok: false,
-        error:
-          error instanceof Error ? error.message : 'Erro interno ao remover agente.',
+        error: sanitizePublicErrorMessage(rawMessage),
       },
       { status: 500 },
     );

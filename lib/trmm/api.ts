@@ -48,13 +48,22 @@ export type TrmmAgent = {
   status?: string;
 };
 
+function sanitizeOperationalError(value: string): string {
+  return value
+    .replace(/TRMM API/gi, 'API operacional')
+    .replace(/TRMM/gi, 'origem operacional')
+    .replace(/TacticalRMM/gi, 'origem operacional')
+    .replace(/Tactical/gi, 'origem operacional')
+    .replace(/tactical/gi, 'operacional');
+}
+
 function getTrmmConfig() {
   const baseUrl = process.env.TRMM_API_URL;
   const apiKey = process.env.TRMM_API_KEY;
 
   if (!baseUrl || !apiKey) {
     throw new Error(
-      'Integração TRMM não configurada. Configure TRMM_API_URL e TRMM_API_KEY no ambiente.',
+      'Integração operacional não configurada. Configure as variáveis de API operacional no ambiente.',
     );
   }
 
@@ -99,7 +108,9 @@ export async function fetchTrmmApi<T>(
 
   if (!response.ok) {
     throw new Error(
-      `TRMM API ${response.status}: ${bodyText || response.statusText}`,
+      `API operacional ${response.status}: ${sanitizeOperationalError(
+        bodyText || response.statusText,
+      )}`,
     );
   }
 
@@ -204,7 +215,7 @@ export async function createTrmmClientWithSite(input: {
 
   if (!createdClient) {
     throw new Error(
-      `Cliente criado no TRMM, mas não foi possível localizar o ID do cliente "${clientName}".`,
+      `Cliente criado na origem operacional, mas não foi possível localizar o ID do cliente "${clientName}".`,
     );
   }
 
@@ -212,7 +223,7 @@ export async function createTrmmClientWithSite(input: {
 
   if (!createdSite) {
     throw new Error(
-      `Cliente criado no TRMM, mas não foi possível localizar o ID do grupo "${siteName}".`,
+      `Cliente criado na origem operacional, mas não foi possível localizar o ID do grupo "${siteName}".`,
     );
   }
 
@@ -229,7 +240,7 @@ export async function createTrmmSite(input: {
   const siteName = input.siteName.trim();
 
   if (!Number.isFinite(input.clientId) || input.clientId <= 0) {
-    throw new Error('ID do cliente TRMM inválido.');
+    throw new Error('ID operacional do cliente inválido.');
   }
 
   if (!siteName) {
@@ -256,7 +267,7 @@ export async function createTrmmSite(input: {
 
   if (!client) {
     throw new Error(
-      `Grupo criado no TRMM, mas não foi possível localizar o cliente ${input.clientId}.`,
+      `Grupo criado na origem operacional, mas não foi possível localizar o cliente ${input.clientId}.`,
     );
   }
 
@@ -264,7 +275,7 @@ export async function createTrmmSite(input: {
 
   if (!createdSite) {
     throw new Error(
-      `Grupo criado no TRMM, mas não foi possível localizar o ID do grupo "${siteName}".`,
+      `Grupo criado na origem operacional, mas não foi possível localizar o ID do grupo "${siteName}".`,
     );
   }
 
@@ -291,7 +302,7 @@ export async function updateTrmmClientName(input: {
 
   if (!currentClient) {
     throw new Error(
-      `Cliente TRMM "${input.currentClientName}" não encontrado. Verifique se o cliente existe no TRMM e se o ID local está sincronizado.`,
+      `Cliente operacional "${input.currentClientName}" não encontrado. Verifique se o cliente existe na origem operacional e se o ID local está sincronizado.`,
     );
   }
 
@@ -327,7 +338,7 @@ export async function deleteTrmmClient(input: {
 
   if (!currentClient) {
     throw new Error(
-      `Cliente TRMM "${input.currentClientName}" não encontrado. Verifique se o cliente ainda existe no TRMM e se o ID local está sincronizado.`,
+      `Cliente operacional "${input.currentClientName}" não encontrado. Verifique se o cliente ainda existe na origem operacional e se o ID local está sincronizado.`,
     );
   }
 
@@ -396,8 +407,7 @@ export async function findTrmmAgentByIdOrHostname(input: {
         normalizedClientName;
 
     const siteMatches =
-      !normalizedSiteName ||
-      normalizeName(agent.site_name ?? '') === normalizedSiteName;
+      !normalizedSiteName || normalizeName(agent.site_name ?? '') === normalizedSiteName;
 
     return clientMatches && siteMatches;
   });
@@ -415,7 +425,7 @@ export async function deleteTrmmAgent(input: {
 
   if (!agent) {
     throw new Error(
-      `Agente TRMM "${input.hostname ?? input.agentId ?? 'desconhecido'}" não encontrado.`,
+      `Agente operacional "${input.hostname ?? input.agentId ?? 'desconhecido'}" não encontrado.`,
     );
   }
 

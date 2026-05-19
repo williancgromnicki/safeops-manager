@@ -28,6 +28,16 @@ function cleanString(value?: string | null): string | null {
   return cleaned ? cleaned : null;
 }
 
+function sanitizePublicErrorMessage(message: string): string {
+  return message
+    .replace(/TRMM API/gi, "API operacional")
+    .replace(/TRMM/gi, "origem operacional")
+    .replace(/TacticalRMM/gi, "origem operacional")
+    .replace(/Tactical/gi, "origem operacional")
+    .replace(/tactical_agent_id/gi, "identificador operacional")
+    .replace(/tactical/gi, "operacional");
+}
+
 async function getAuthenticatedUser() {
   const supabase = await createClient();
 
@@ -187,21 +197,21 @@ export async function POST(
       );
     }
 
-    const tacticalAgentId = cleanString(data.tactical_agent_id);
+    const operationalAgentId = cleanString(data.tactical_agent_id);
 
-    if (!tacticalAgentId) {
+    if (!operationalAgentId) {
       return NextResponse.json(
         {
           ok: false,
           error:
-            "Dispositivo sem tactical_agent_id para instalação de software.",
+            "Dispositivo sem identificador operacional para instalação de software.",
         },
         { status: 409 }
       );
     }
 
     const result = await installSoftwareOnAgent({
-      agentId: tacticalAgentId,
+      agentId: operationalAgentId,
       softwareKey,
       requestedBy: user.id,
     });
@@ -215,13 +225,13 @@ export async function POST(
       },
     });
   } catch (error) {
+    const rawMessage =
+      error instanceof Error ? error.message : "Erro interno ao instalar software.";
+
     return NextResponse.json(
       {
         ok: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Erro interno ao instalar software.",
+        error: sanitizePublicErrorMessage(rawMessage),
       },
       { status: 500 }
     );
