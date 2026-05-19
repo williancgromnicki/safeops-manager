@@ -41,7 +41,15 @@ function formatDateTime(value?: string | null): string {
     return value;
   }
 
-  return date.toLocaleString('pt-BR');
+  return new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(date);
 }
 
 function isExpired(value?: string | null): boolean {
@@ -112,6 +120,33 @@ function actionLabel(installer: AgentInstallerRow): string {
   return 'Abrir instalador';
 }
 
+function getTokenHours(installer: AgentInstallerRow): number {
+  const tokenHours = Number(installer.token_hours);
+
+  if (Number.isFinite(tokenHours) && tokenHours > 0) {
+    return Math.floor(tokenHours);
+  }
+
+  return 24;
+}
+
+function tokenValidityLabel(installer: AgentInstallerRow): string {
+  const hours = getTokenHours(installer);
+
+  if (hours % 24 === 0) {
+    const days = hours / 24;
+    return days === 1 ? '24h' : `${days} dias`;
+  }
+
+  return `${hours}h`;
+}
+
+function isTemporaryScript(installer: AgentInstallerRow): boolean {
+  return ['linux_script', 'macos_script'].includes(
+    installer.install_method ?? '',
+  );
+}
+
 function ExpiryBadge({ expiresAt }: { expiresAt?: string | null }) {
   if (!expiresAt) {
     return (
@@ -144,6 +179,18 @@ function ExpiryBadge({ expiresAt }: { expiresAt?: string | null }) {
   );
 }
 
+function TokenValidityBadge({ installer }: { installer: AgentInstallerRow }) {
+  if (!isTemporaryScript(installer)) {
+    return null;
+  }
+
+  return (
+    <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 ring-1 ring-amber-600/20">
+      Token válido por {tokenValidityLabel(installer)}
+    </span>
+  );
+}
+
 function InstallerCard({ installer }: { installer: AgentInstallerRow }) {
   const expired = isExpired(installer.expires_at);
   const downloadHref = `/api/agent-installers/${encodeURIComponent(
@@ -171,7 +218,10 @@ function InstallerCard({ installer }: { installer: AgentInstallerRow }) {
           ) : null}
         </div>
 
-        <ExpiryBadge expiresAt={installer.expires_at} />
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+          <ExpiryBadge expiresAt={installer.expires_at} />
+          <TokenValidityBadge installer={installer} />
+        </div>
       </div>
 
       <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -182,11 +232,12 @@ function InstallerCard({ installer }: { installer: AgentInstallerRow }) {
           {formatDateTime(installer.expires_at)}
         </p>
 
-        {installer.install_method === 'linux_script' ? (
-          <p className="mt-2 text-xs text-slate-500">
-            O script é gerado no momento do download e possui validade
-            temporária.
-          </p>
+        {isTemporaryScript(installer) ? (
+          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
+            O script é gerado no momento do download e possui token temporário
+            de {tokenValidityLabel(installer)}. Se o arquivo for usado depois
+            desse período, baixe um novo instalador antes de executar.
+          </div>
         ) : null}
       </div>
 
