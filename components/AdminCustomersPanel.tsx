@@ -485,7 +485,7 @@ export function AdminCustomersPanel() {
                     Cliente
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    ID TRMM
+                    ID operacional
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Grupos
@@ -631,7 +631,7 @@ export function AdminCustomersPanel() {
             </h3>
 
             <p className="mt-2 text-sm text-slate-600">
-              Esta ação removerá o cliente no TRMM e também removerá no SafeOps
+              Esta ação removerá o cliente da origem operacional e também removerá no SafeOps
               os grupos/sites vinculados a ele. Use somente para clientes de
               teste ou quando tiver certeza.
             </p>

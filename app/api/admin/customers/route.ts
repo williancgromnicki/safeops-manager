@@ -327,7 +327,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (insertCustomerError) {
-      throw new Error(`Cliente criado no TRMM, mas falhou ao salvar no SafeOps: ${insertCustomerError.message}`);
+      throw new Error(`Cliente criado na origem operacional, mas falhou ao salvar no SafeOps: ${insertCustomerError.message}`);
     }
 
     const { error: siteError } = await supabaseAdmin.from('sites').insert({

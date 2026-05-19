@@ -270,7 +270,7 @@ function buildOfflineEmailBody(input: {
     'Detalhes:',
     input.details,
     '',
-    'Critério atual: dispositivo sem check-in há mais de 15 minutos no inventário sincronizado do TRMM.',
+    'Critério atual: dispositivo sem check-in há mais de 15 minutos no inventário sincronizado do SafeOps.',
   ].join('\n');
 }
 
@@ -295,7 +295,7 @@ function buildRecoveryEmailBody(input: {
     `Site: ${input.site ?? 'Não informado'}`,
     `Último check-in: ${formatLastSeenForDetails(input.lastSeenAt)}`,
     '',
-    'O alerta automático de dispositivo offline foi encerrado porque o equipamento voltou a aparecer como online no inventário sincronizado do TRMM.',
+    'O alerta automático de dispositivo offline foi encerrado porque o equipamento voltou a aparecer como online no inventário sincronizado do SafeOps.',
   ].join('\n');
 }
 

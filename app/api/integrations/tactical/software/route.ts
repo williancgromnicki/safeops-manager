@@ -84,7 +84,7 @@ function normalizeSoftwareItem(
     install_date: cleanString(item.install_date),
     size: cleanString(item.size),
     location: cleanString(item.location),
-    source: cleanString(item.source) ?? 'Tactical RMM',
+    source: cleanString(item.source) ?? 'SafeOps Agent',
     raw: item as JsonObject,
   };
 }

@@ -126,7 +126,7 @@ export async function executeTrmmScript(input: {
   const agentId = input.agentId.trim();
 
   if (!agentId) {
-    throw new Error('Informe o agent_id do TRMM.');
+    throw new Error('Informe o identificador operacional do agente.');
   }
 
   return fetchTrmmApi<TrmmScriptExecutionResult>(
